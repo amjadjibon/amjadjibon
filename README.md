@@ -20,6 +20,10 @@
 
 <br/>  
 
+[![An image of @amjadjibon's Holopin badges, which is a link to view their full Holopin profile](https://holopin.me/amjadjibon)](https://holopin.io/@amjadjibon)
+
+<br/>
+
 
 ## My Skill Set
 <table><tr><td valign="top" width="33%">
