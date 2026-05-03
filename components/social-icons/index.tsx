@@ -1,16 +1,16 @@
 import {
-  Mail,
-  Github,
+  Bluesky,
   Facebook,
-  Youtube,
+  Github,
+  Instagram,
   Linkedin,
+  Mail,
+  Mastodon,
+  Medium,
+  Threads,
   Twitter,
   X,
-  Mastodon,
-  Threads,
-  Instagram,
-  Medium,
-  Bluesky,
+  Youtube,
 } from './icons'
 
 const components = {
