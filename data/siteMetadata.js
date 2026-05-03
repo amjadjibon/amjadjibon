@@ -20,6 +20,9 @@ const siteMetadata = {
   locale: 'en-US',
   stickyNav: true,
   analytics: {
+    googleAnalytics: {
+      measurementId: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+    },
     umamiAnalytics: {
       umamiWebsiteId: process.env.NEXT_UMAMI_ID,
     },
