@@ -1,11 +1,5 @@
 // Google Analytics 4 event tracking utilities
 
-declare global {
-  interface Window {
-    gtag: (command: string, targetId: string, config?: Record<string, unknown>) => void
-  }
-}
-
 // Track page views
 export const trackPageView = (url: string, title?: string) => {
   if (typeof window !== 'undefined' && window.gtag) {

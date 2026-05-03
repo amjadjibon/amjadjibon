@@ -1,4 +1,4 @@
-import Image from 'next/image'
+import { ImageResponse } from 'next/og'
 
 export const size = {
   width: 1200,
@@ -8,7 +8,7 @@ export const size = {
 export const alt = 'Amjad Hossain'
 
 export default function twitterImage() {
-  return (
+  return new ImageResponse(
     <div
       style={{
         width: '100%',
@@ -28,6 +28,10 @@ export default function twitterImage() {
       <div style={{ fontSize: '32px', fontWeight: 'normal' }}>
         Golang & Python | Distributed Systems | Cloud Infrastructure
       </div>
-    </div>
+    </div>,
+    {
+      width: 1200,
+      height: 630,
+    }
   )
 }

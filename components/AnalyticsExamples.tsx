@@ -7,6 +7,7 @@
  * import { trackEvent, trackSocialClick, trackNewsletterSignup } from '@/utils/analytics'
  */
 
+import { useEffect, useState } from 'react'
 import {
   trackEvent,
   trackExternalLink,

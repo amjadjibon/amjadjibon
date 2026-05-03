@@ -1,4 +1,4 @@
-import Image from 'next/image'
+import { ImageResponse } from 'next/og'
 
 export const size = {
   width: 1200,
@@ -8,7 +8,7 @@ export const size = {
 export const contentType = 'image/png'
 
 export default function ogImage() {
-  return (
+  return new ImageResponse(
     <div
       style={{
         width: '100%',
@@ -23,6 +23,10 @@ export default function ogImage() {
       }}
     >
       amjadjibon
-    </div>
+    </div>,
+    {
+      width: 1200,
+      height: 630,
+    }
   )
 }
