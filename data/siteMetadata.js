@@ -14,6 +14,9 @@ const siteMetadata = {
   email: 'amjad.jibon@gmail.com',
   github: 'https://github.com/amjadjibon',
   linkedin: 'https://www.linkedin.com/in/amjadjibon',
+  x: 'https://x.com/amjadjibon',
+  medium: 'https://medium.com/@amjadjibon',
+  substack: 'https://substack.com/@amjadjibon',
   locale: 'en-US',
   stickyNav: true,
   analytics: {

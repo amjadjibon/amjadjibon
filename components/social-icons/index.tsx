@@ -7,6 +7,7 @@ import {
   Mail,
   Mastodon,
   Medium,
+  Substack,
   Threads,
   Twitter,
   X,
@@ -25,6 +26,7 @@ const components = {
   threads: Threads,
   instagram: Instagram,
   medium: Medium,
+  substack: Substack,
   bluesky: Bluesky,
 }
 
