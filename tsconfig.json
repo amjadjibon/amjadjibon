@@ -16,6 +16,7 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "paths": {
+      "@/app/*": ["./app/*"],
       "@/components/*": ["./components/*"],
       "@/data/*": ["./data/*"],
       "@/layouts/*": ["./layouts/*"],
