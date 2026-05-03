@@ -1,0 +1,81 @@
+---
+title: 'Why I Chose Go for Backend Services'
+date: '2025-05-03'
+tags: ['golang', 'backend', 'microservices']
+draft: false
+summary: 'After years of Python, I migrated a fintech microservices stack to Go. Here is what I learned and why I would not go back.'
+---
+
+At UPAY, our microservices were written in Python. They worked — until they did not.
+As transaction volume grew, latency crept up and memory footprints ballooned.
+We were running more replicas than we should have needed. Something had to change.
+
+We chose Go. This is what I learned from that migration.
+
+## The Performance Numbers Were Real
+
+The headline results were a 35% throughput improvement and 50% reduction in memory usage.
+Those are not made-up benchmarks — they are production numbers from a fintech platform
+processing real transactions.
+
+The reasons are not magic. Go is compiled, not interpreted. It has a lean runtime.
+Goroutines are cheap — you can spawn thousands without the overhead of OS threads.
+For services that are heavily I/O bound (database calls, Redis lookups, external API calls),
+Go's concurrency model means you can keep CPU busy rather than blocking on every network hop.
+
+## The Type System Saves You at Scale
+
+Python's dynamic typing is a productivity win at the start of a project.
+It becomes a liability in a large codebase with many engineers.
+
+Go's static typing means the compiler catches an entire class of bugs before deployment.
+When you are maintaining a core banking system — where a wrong type cast can mean a wrong amount —
+that is not a minor nicety. It is a safety property.
+
+## gRPC + Protobuf Are a Natural Fit
+
+Go's code generation for Protocol Buffers is excellent.
+Define your service contract in a `.proto` file, generate the client and server stubs,
+and you get type-safe, versioned, documented APIs across service boundaries.
+
+Combined with gRPC's streaming support and HTTP/2 multiplexing,
+our inter-service communication became faster and easier to reason about.
+
+## Error Handling Forces Honesty
+
+Go's explicit error handling is verbose. That is the point.
+
+```go
+result, err := db.Query(ctx, query, args...)
+if err != nil {
+    return fmt.Errorf("db.Query: %w", err)
+}
+```
+
+You cannot ignore errors. You cannot let exceptions bubble up silently.
+Every error is a decision: handle it here, wrap it and return it, or log and continue.
+That discipline makes failures easier to trace in production.
+
+## What I Would Do Differently
+
+- **Start with interfaces from day one.** Go's implicit interface satisfaction is powerful,
+  but you need to design for it. Concrete types everywhere make testing harder.
+- **Use `context` everywhere from the start.** Retrofitting context propagation into
+  existing code is painful.
+- **Write table-driven tests.** Go's testing package encourages this pattern and it pays off.
+
+## The Honest Tradeoffs
+
+Go is not better at everything. Python wins on:
+
+- Data science and ML tooling
+- Scripting and automation tasks
+- Prototyping speed
+
+For long-running, high-throughput backend services with teams larger than a few engineers,
+I would choose Go every time.
+
+---
+
+Next post: how we structured our Protobuf definitions and gRPC service boundaries to avoid the
+coupling problems that killed our Python monolith in the first place.

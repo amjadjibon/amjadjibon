@@ -7,20 +7,22 @@ interface Project {
 
 const projectsData: Project[] = [
   {
-    title: 'A Search Engine',
-    description: `What if you could look up any information in the world? Webpages, images, videos
-    and more. Google has many features to help you find exactly what you're looking
-    for.`,
-    imgSrc: '/static/images/google.png',
-    href: 'https://www.google.com',
+    title: 'htemplx',
+    description:
+      'Modern full-stack web starter built with Golang, HTMX, Templ, and Tailwind CSS. A productive alternative to heavyweight JS frameworks for server-driven UIs.',
+    href: 'https://github.com/amjadjibon/htemplx',
   },
   {
-    title: 'The Time Machine',
-    description: `Imagine being able to travel back in time or to the future. Simple turn the knob
-    to the desired date and press "Go". No more worrying about lost keys or
-    forgotten headphones with this simple yet affordable solution.`,
-    imgSrc: '/static/images/time-machine.jpg',
-    href: '/blog/the-time-machine',
+    title: 'raftd',
+    description:
+      'Toy implementation of a distributed key-value store using the Raft consensus algorithm and gRPC. Built to deepen understanding of distributed systems fundamentals.',
+    href: 'https://github.com/amjadjibon/raftd',
+  },
+  {
+    title: 'termchess',
+    description:
+      'A fully playable chess playground that runs in the terminal, built with Go and the Bubble Tea TUI framework.',
+    href: 'https://github.com/amjadjibon/termchess',
   },
 ]
 

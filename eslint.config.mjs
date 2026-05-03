@@ -1,7 +1,7 @@
 import typescriptEslint from '@typescript-eslint/eslint-plugin'
+import prettierPlugin from 'eslint-plugin-prettier'
 import tsParser from '@typescript-eslint/parser'
 import js from '@eslint/js'
-import nextConfig from 'eslint-config-next'
 import coreWebVitalsConfig from 'eslint-config-next/core-web-vitals'
 
 export default [
@@ -13,6 +13,13 @@ export default [
   {
     plugins: {
       '@typescript-eslint': typescriptEslint,
+      prettier: prettierPlugin,
+    },
+
+    settings: {
+      react: {
+        version: '19.0.0',
+      },
     },
 
     languageOptions: {
@@ -25,6 +32,7 @@ export default [
     rules: {
       'prettier/prettier': 'error',
       'react/react-in-jsx-scope': 'off',
+      'react/display-name': 'off',
 
       'jsx-a11y/anchor-is-valid': [
         'error',
