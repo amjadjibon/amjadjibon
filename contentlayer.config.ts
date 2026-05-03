@@ -148,6 +148,7 @@ export const Authors = defineDocumentType(() => ({
 export default makeSource({
   contentDirPath: 'data',
   documentTypes: [Blog, Authors],
+  disableImportAliasWarning: true,
   mdx: {
     cwd: process.cwd(),
     remarkPlugins: [
