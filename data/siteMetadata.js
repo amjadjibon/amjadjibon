@@ -13,7 +13,7 @@ const siteMetadata = {
   socialBanner: `${process.env.BASE_PATH || ''}/static/images/twitter-card.png`,
   email: 'amjad.jibon@gmail.com',
   github: 'https://github.com/amjadjibon',
-  linkedin: 'https://www.linkedin.com/in/amjadjibon',
+  linkedin: 'https://www.linkedin.com/in/amjad-hossaain',
   x: 'https://x.com/amjadjibon',
   medium: 'https://medium.com/@amjadjibon',
   substack: 'https://substack.com/@amjadjibon',
