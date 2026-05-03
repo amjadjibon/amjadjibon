@@ -75,7 +75,7 @@ function createTagCount(allBlogs: any[]) {
       })
     }
   })
-  writeFileSync('./app/tag-data.json', JSON.stringify(tagCount, null, 2))
+  writeFileSync('./app/tag-data.json', JSON.stringify(tagCount, null, 2) + '\n')
 }
 
 function createSearchIndex(allBlogs: any[]) {
@@ -85,7 +85,7 @@ function createSearchIndex(allBlogs: any[]) {
   ) {
     writeFileSync(
       `public/${path.basename(siteMetadata.search.kbarConfig.searchDocumentsPath)}`,
-      JSON.stringify(allCoreContent(sortPosts(allBlogs)))
+      JSON.stringify(allCoreContent(sortPosts(allBlogs))) + '\n'
     )
     console.log('Local search index generated...')
   }
