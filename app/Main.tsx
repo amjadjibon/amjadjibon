@@ -1,3 +1,5 @@
+import type { Blog } from 'contentlayer/generated'
+import type { CoreContent } from 'pliny/utils/contentlayer'
 import { formatDate } from 'pliny/utils/formatDate'
 import Link from '@/components/Link'
 import Tag from '@/components/Tag'
@@ -18,7 +20,7 @@ const SKILLS = [
   'Docker',
 ]
 
-export default function Home({ posts }: { posts: Record<string, unknown>[] }) {
+export default function Home({ posts }: { posts: CoreContent<Blog>[] }) {
   return (
     <>
       {/* Hero */}
@@ -86,7 +88,7 @@ export default function Home({ posts }: { posts: Record<string, unknown>[] }) {
           {!posts.length && (
             <li className="py-12 text-gray-500">No posts yet — check back soon.</li>
           )}
-          {posts.slice(0, MAX_DISPLAY).map((post: Record<string, unknown>) => {
+          {posts.slice(0, MAX_DISPLAY).map((post) => {
             const { slug, date, title, summary, tags } = post
             return (
               <li key={slug} className="py-10">
@@ -106,7 +108,7 @@ export default function Home({ posts }: { posts: Record<string, unknown>[] }) {
                           </Link>
                         </h3>
                         <div className="flex flex-wrap gap-1">
-                          {(tags as string[]).map((tag) => (
+                          {tags.map((tag) => (
                             <Tag key={tag} text={tag} />
                           ))}
                         </div>
