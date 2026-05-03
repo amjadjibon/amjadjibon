@@ -15,6 +15,7 @@ import PostLayout from '@/layouts/PostLayout'
 import PostSimple from '@/layouts/PostSimple'
 
 const defaultLayout = 'PostLayout'
+type LayoutType = keyof typeof layouts
 const layouts = {
   PostSimple,
   PostLayout,
@@ -104,7 +105,7 @@ export default async function Page(props: { params: Promise<{ slug: string[] }> 
     }
   })
 
-  const Layout = layouts[post.layout || defaultLayout]
+  const Layout = layouts[(post.layout || defaultLayout) as LayoutType]
 
   return (
     <>

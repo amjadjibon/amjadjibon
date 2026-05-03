@@ -13,10 +13,12 @@ const MobileNav = () => {
 
   const onToggleNav = () => {
     setNavShow((status) => {
-      if (status) {
-        enableBodyScroll(navRef.current)
-      } else {
-        disableBodyScroll(navRef.current)
+      if (navRef.current) {
+        if (status) {
+          enableBodyScroll(navRef.current)
+        } else {
+          disableBodyScroll(navRef.current)
+        }
       }
       return !status
     })
