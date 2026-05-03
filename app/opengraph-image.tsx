@@ -1,3 +1,6 @@
+// OpenGraph image generation using Next.js ImageResponse
+// Note: Inline styles are REQUIRED here - ImageResponse renders to an image, not HTML
+// External CSS files and Tailwind classes are not supported in image generation
 import { ImageResponse } from 'next/og'
 
 export const size = {
@@ -7,6 +10,7 @@ export const size = {
 
 export const contentType = 'image/png'
 
+// biome-ignore lint/style/noUnusedTemplateLiteral: ImageResponse requires inline styles for image generation
 export default function ogImage() {
   return new ImageResponse(
     <div

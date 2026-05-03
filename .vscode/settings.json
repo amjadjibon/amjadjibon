@@ -1,4 +1,10 @@
 {
-  "typescript.tsdk": "node_modules/typescript/lib",
-  "typescript.enablePromptUseWorkspaceTsdk": true
+  "css.validate": false,
+  "stylelint.validate": [],
+  "eslint.options": {
+    "ignorePattern": ["opengraph-image.tsx", "twitter-image.tsx"]
+  },
+  "editor.codeActionsOnSave": {
+    "source.fixAll.stylelint": "explicit"
+  }
 }
