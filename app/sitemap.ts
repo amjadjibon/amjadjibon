@@ -14,9 +14,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: post.lastmod || post.date,
     }))
 
+  const latestPost = blogRoutes[0]?.lastModified ?? '2024-01-01'
   const routes = ['', 'blog', 'projects', 'tags'].map((route) => ({
     url: `${siteUrl}/${route}`,
-    lastModified: new Date().toISOString().split('T')[0],
+    lastModified: latestPost,
   }))
 
   return [...routes, ...blogRoutes]

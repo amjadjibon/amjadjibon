@@ -90,6 +90,21 @@ module.exports = () => {
     async headers() {
       return [
         {
+          // Next.js hashed chunks — safe to cache for 1 year
+          source: '/_next/static/(.*)',
+          headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+        },
+        {
+          // Static assets under /public — fonts, images, favicons
+          source: '/static/(.*)',
+          headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+        },
+        {
+          // Feed and search index change only on redeploy
+          source: '/(feed.xml|search.json)',
+          headers: [{ key: 'Cache-Control', value: 'public, max-age=3600, stale-while-revalidate=86400' }],
+        },
+        {
           source: '/(.*)',
           headers: securityHeaders,
         },
