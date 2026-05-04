@@ -1,0 +1,21 @@
+{
+  "extends": [
+    "development"
+  ],
+  "hints": {
+    "compat-api/html": [
+      "warn",
+      {
+        "ignore": ["meta[name=theme-color]"]
+      }
+    ]
+  },
+  "browserslist": [
+    "defaults",
+    "not ie 11",
+    "not chrome <= 109",
+    "not ios_saf <= 18.3",
+    "not safari <= 18.3",
+    "not samsung <= 27"
+  ]
+}
