@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 import { Geist_Mono, JetBrains_Mono } from 'next/font/google'
 import { Analytics, type AnalyticsConfig } from 'pliny/analytics'
 import { type SearchConfig, SearchProvider } from 'pliny/search'
+import Aurora from '@/app/components/Aurora'
 import Footer from '@/components/Footer'
 import GoogleAnalytics from '@/components/GoogleAnalytics'
 import Header from '@/components/Header'
@@ -79,15 +80,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <body className="bg-background pl-[calc(100vw-100%)] text-foreground antialiased">
         <ThemeProviders>
-          <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
-          <GoogleAnalytics measurementId={process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || ''} />
-          <SectionContainer>
-            <SearchProvider searchConfig={siteMetadata.search as SearchConfig}>
-              <Header />
-              <main className="mb-auto">{children}</main>
-            </SearchProvider>
-            <Footer />
-          </SectionContainer>
+          <div className="pointer-events-none fixed inset-0 z-0">
+            <Aurora colorStops={['#d87943', '#ececec', '#d87943']} amplitude={0.55} blend={0.35} />
+          </div>
+          <div className="relative z-10">
+            <div className="pointer-events-none fixed inset-0 z-0 bg-white/70 dark:bg-black/55 backdrop-blur-[1px]" />
+            <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
+            <GoogleAnalytics measurementId={process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || ''} />
+            <div className="relative z-10">
+              <SectionContainer>
+                <SearchProvider searchConfig={siteMetadata.search as SearchConfig}>
+                  <Header />
+                  <main className="mb-auto">{children}</main>
+                </SearchProvider>
+                <Footer />
+              </SectionContainer>
+            </div>
+          </div>
         </ThemeProviders>
       </body>
     </html>
