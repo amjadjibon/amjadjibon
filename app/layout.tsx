@@ -33,8 +33,8 @@ export const metadata: Metadata = {
   },
   description: siteMetadata.description,
   icons: {
-    icon: [{ url: '/static/favicons/favicon.png', sizes: '512x512', type: 'image/png' }],
-    apple: [{ url: '/static/favicons/favicon.png', sizes: '512x512' }],
+    icon: [{ url: '/static/favicons/favicon-v3.png', sizes: '64x64', type: 'image/png' }],
+    apple: [{ url: '/static/favicons/favicon-v3.png', sizes: '64x64' }],
   },
   manifest: '/static/favicons/site.webmanifest',
   openGraph: {

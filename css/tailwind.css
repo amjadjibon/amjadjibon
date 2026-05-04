@@ -175,6 +175,42 @@
 }
 
 @layer utilities {
+  .liquid-glass-navbar {
+    position: sticky;
+    top: 0.75rem;
+    z-index: 60;
+    margin-inline: auto;
+    width: min(100%, 72rem);
+    border: 1px solid color-mix(in oklab, var(--foreground) 16%, transparent);
+    border-radius: 1.25rem;
+    background:
+      linear-gradient(
+        135deg,
+        color-mix(in oklab, white 82%, transparent) 0%,
+        color-mix(in oklab, var(--primary) 30%, transparent) 45%,
+        color-mix(in oklab, white 76%, transparent) 100%
+      );
+    backdrop-filter: saturate(190%) blur(28px);
+    -webkit-backdrop-filter: saturate(190%) blur(28px);
+    box-shadow:
+      0 12px 30px color-mix(in oklab, black 10%, transparent),
+      inset 0 1px 0 color-mix(in oklab, white 78%, transparent);
+  }
+
+  .dark .liquid-glass-navbar {
+    border-color: color-mix(in oklab, white 20%, transparent);
+    background:
+      linear-gradient(
+        135deg,
+        color-mix(in oklab, white 18%, transparent) 0%,
+        color-mix(in oklab, var(--primary) 36%, transparent) 45%,
+        color-mix(in oklab, white 14%, transparent) 100%
+      );
+    box-shadow:
+      0 16px 34px color-mix(in oklab, black 48%, transparent),
+      inset 0 1px 0 color-mix(in oklab, white 22%, transparent);
+  }
+
   .prose {
     & a {
       color: var(--color-primary-500);
