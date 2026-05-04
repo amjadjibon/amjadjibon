@@ -4,6 +4,7 @@ import 'remark-github-blockquote-alert/alert.css'
 
 import type { Metadata } from 'next'
 import { Geist_Mono, JetBrains_Mono } from 'next/font/google'
+import Script from 'next/script'
 import { Analytics, type AnalyticsConfig } from 'pliny/analytics'
 import { type SearchConfig, SearchProvider } from 'pliny/search'
 import Aurora from '@/app/components/Aurora'
@@ -79,6 +80,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
     >
       <body className="bg-background pl-[calc(100vw-100%)] text-foreground antialiased">
+        <Script
+          id="adsense-auto-ads"
+          async
+          strategy="afterInteractive"
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8416805375023197"
+          crossOrigin="anonymous"
+        />
         <ThemeProviders>
           <div className="pointer-events-none fixed inset-0 z-0">
             <Aurora colorStops={['#d87943', '#ececec', '#d87943']} amplitude={0.55} blend={0.35} />
