@@ -10,7 +10,7 @@ const siteMetadata = {
   siteUrl: 'https://amjadjibon.github.io',
   siteRepo: 'https://github.com/amjadjibon/amjadjibon',
   siteLogo: `${process.env.BASE_PATH || ''}/static/images/logo.png`,
-  socialBanner: `${process.env.BASE_PATH || ''}/static/images/twitter-card.png`,
+  socialBanner: `${process.env.BASE_PATH || ''}/static/images/logo.png`,
   email: 'amjad.jibon@gmail.com',
   github: 'https://github.com/amjadjibon',
   linkedin: 'https://www.linkedin.com/in/amjad-hossaain',
