@@ -1,23 +1,24 @@
 import { allBlogs } from 'contentlayer/generated'
 import { ImageResponse } from 'next/og'
+import type { NextRequest } from 'next/server'
 
-export const size = { width: 1200, height: 630 }
-export const contentType = 'image/png'
+export const runtime = 'edge'
 
-export async function generateStaticParams() {
-  return allBlogs.map((post) => ({
-    slug: post.slug.split('/').map((s) => decodeURI(s)),
-  }))
-}
+export async function GET(req: NextRequest) {
+  const { searchParams } = req.nextUrl
+  const slug = searchParams.get('slug') ?? ''
 
-export default async function Image({ params }: { params: Promise<{ slug: string[] }> }) {
-  const { slug: slugParts } = await params
-  const slug = decodeURI(slugParts.join('/'))
-  const post = allBlogs.find((p) => p.slug === slug)
+  const post = allBlogs.find((p) => p.slug === decodeURIComponent(slug))
 
   const title = post?.title ?? 'Blog'
   const summary = post?.summary ?? ''
-  const date = post?.date ? new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''
+  const date = post?.date
+    ? new Date(post.date).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : ''
   const tags: string[] = post?.tags ?? []
 
   return new ImageResponse(
@@ -33,20 +34,24 @@ export default async function Image({ params }: { params: Promise<{ slug: string
         fontFamily: 'monospace',
       }}
     >
-      {/* top: site name */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{ color: '#d87943', fontSize: '20px', fontWeight: 700, letterSpacing: '0.1em' }}>
+        <div
+          style={{ color: '#d87943', fontSize: '20px', fontWeight: 700, letterSpacing: '0.1em' }}
+        >
           amjadjibon
         </div>
-        {date && (
-          <div style={{ color: '#888', fontSize: '16px', marginLeft: '16px' }}>
-            {date}
-          </div>
-        )}
+        {date && <div style={{ color: '#888', fontSize: '16px', marginLeft: '16px' }}>{date}</div>}
       </div>
 
-      {/* middle: title + summary */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1, justifyContent: 'center' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px',
+          flex: 1,
+          justifyContent: 'center',
+        }}
+      >
         <div
           style={{
             color: '#f5f5f5',
@@ -65,7 +70,6 @@ export default async function Image({ params }: { params: Promise<{ slug: string
         )}
       </div>
 
-      {/* bottom: tags */}
       {tags.length > 0 && (
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           {tags.slice(0, 5).map((tag) => (

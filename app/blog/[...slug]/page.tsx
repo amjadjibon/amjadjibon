@@ -40,15 +40,17 @@ export async function generateMetadata(props: {
   const publishedAt = new Date(post.date).toISOString()
   const modifiedAt = new Date(post.lastmod || post.date).toISOString()
   const authors = authorDetails.map((author) => author.name)
+  const ogImageUrl = `${siteMetadata.siteUrl}/api/og?slug=${encodeURIComponent(slug)}`
   let imageList = [siteMetadata.socialBanner]
   if (post.images) {
     imageList = typeof post.images === 'string' ? [post.images] : post.images
   }
-  const ogImages = imageList.map((img) => {
-    return {
+  const ogImages = [
+    { url: ogImageUrl },
+    ...imageList.map((img) => ({
       url: img && img.includes('http') ? img : siteMetadata.siteUrl + img,
-    }
-  })
+    })),
+  ]
 
   return {
     title: post.title,
@@ -69,7 +71,7 @@ export async function generateMetadata(props: {
       card: 'summary_large_image',
       title: post.title,
       description: post.summary,
-      images: imageList,
+      images: [ogImageUrl, ...imageList],
     },
   }
 }
