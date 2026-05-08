@@ -116,6 +116,9 @@ export default function Aurora(props) {
   const propsRef = useRef(props)
   propsRef.current = props
 
+  const parsedColorsRef = useRef(colorStops.map((hex) => { const c = new Color(hex); return [c.r, c.g, c.b] }))
+  const prevColorStopsRef = useRef(colorStops)
+
   const ctnDom = useRef(null)
 
   useEffect(() => {
@@ -179,10 +182,11 @@ export default function Aurora(props) {
       program.uniforms.uAmplitude.value = propsRef.current.amplitude ?? 1.0
       program.uniforms.uBlend.value = propsRef.current.blend ?? blend
       const stops = propsRef.current.colorStops ?? colorStops
-      program.uniforms.uColorStops.value = stops.map((hex) => {
-        const c = new Color(hex)
-        return [c.r, c.g, c.b]
-      })
+      if (stops !== prevColorStopsRef.current) {
+        prevColorStopsRef.current = stops
+        parsedColorsRef.current = stops.map((hex) => { const c = new Color(hex); return [c.r, c.g, c.b] })
+      }
+      program.uniforms.uColorStops.value = parsedColorsRef.current
       renderer.render({ scene: mesh })
     }
     animateId = requestAnimationFrame(update)
