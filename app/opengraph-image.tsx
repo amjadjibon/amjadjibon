@@ -2,6 +2,8 @@
 // External CSS and Tailwind classes are not supported in image generation.
 import { ImageResponse } from 'next/og'
 
+export const dynamic = 'force-static'
+
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -19,10 +21,26 @@ export default function ogImage() {
         fontFamily: 'monospace',
       }}
     >
-      <div style={{ color: '#d87943', fontSize: '22px', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '24px' }}>
+      <div
+        style={{
+          color: '#d87943',
+          fontSize: '22px',
+          fontWeight: 700,
+          letterSpacing: '0.12em',
+          marginBottom: '24px',
+        }}
+      >
         amjadjibon.github.io
       </div>
-      <div style={{ color: '#f5f5f5', fontSize: '80px', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+      <div
+        style={{
+          color: '#f5f5f5',
+          fontSize: '80px',
+          fontWeight: 800,
+          letterSpacing: '-0.03em',
+          lineHeight: 1.1,
+        }}
+      >
         Amjad Hossain
       </div>
       <div style={{ color: '#aaa', fontSize: '28px', marginTop: '20px', letterSpacing: '0.02em' }}>
