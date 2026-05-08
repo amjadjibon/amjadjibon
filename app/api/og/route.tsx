@@ -2,7 +2,7 @@ import { allBlogs } from 'contentlayer/generated'
 import { ImageResponse } from 'next/og'
 import type { NextRequest } from 'next/server'
 
-export const runtime = 'edge'
+export const dynamic = 'force-static'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl

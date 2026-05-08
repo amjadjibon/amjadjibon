@@ -3,6 +3,8 @@
 // External CSS files and Tailwind classes are not supported in image generation
 import { ImageResponse } from 'next/og'
 
+export const dynamic = 'force-static'
+
 export const size = {
   width: 1200,
   height: 630,
