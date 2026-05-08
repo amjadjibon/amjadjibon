@@ -10,8 +10,6 @@ const Header = () => {
   let headerClass = 'liquid-glass-navbar flex items-center justify-between px-4 py-3 sm:px-5'
   if (siteMetadata.stickyNav) {
     headerClass += ' sticky'
-  } else {
-    headerClass = 'flex items-center justify-between px-4 py-3 sm:px-5'
   }
 
   return (
