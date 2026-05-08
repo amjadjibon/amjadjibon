@@ -8,11 +8,11 @@ const ScrollTopAndComment = () => {
 
   useEffect(() => {
     const handleWindowScroll = () => {
-      if (window.scrollY > 50) setShow(true)
-      else setShow(false)
+      const shouldShow = window.scrollY > 50
+      setShow((prev) => (prev === shouldShow ? prev : shouldShow))
     }
 
-    window.addEventListener('scroll', handleWindowScroll)
+    window.addEventListener('scroll', handleWindowScroll, { passive: true })
     return () => window.removeEventListener('scroll', handleWindowScroll)
   }, [])
 
