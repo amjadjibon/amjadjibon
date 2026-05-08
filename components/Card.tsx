@@ -17,9 +17,9 @@ const Card = ({ title, description, imgSrc, href }: CardProps) => (
     >
       {imgSrc &&
         (href ? (
-          <Link href={href} aria-label={`Link to ${title}`}>
+          <Link href={href} aria-hidden="true" tabIndex={-1}>
             <Image
-              alt={title}
+              alt=""
               src={imgSrc}
               className="object-cover object-center md:h-36 lg:h-48"
               width={544}
@@ -38,7 +38,7 @@ const Card = ({ title, description, imgSrc, href }: CardProps) => (
       <div className="p-6">
         <h2 className="mb-3 text-2xl leading-8 font-bold tracking-tight">
           {href ? (
-            <Link href={href} aria-label={`Link to ${title}`}>
+            <Link href={href}>
               {title}
             </Link>
           ) : (
@@ -50,7 +50,7 @@ const Card = ({ title, description, imgSrc, href }: CardProps) => (
           <Link
             href={href}
             className="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400 text-base leading-6 font-medium"
-            aria-label={`Link to ${title}`}
+            aria-label={`Learn more about ${title}`}
           >
             Learn more &rarr;
           </Link>
