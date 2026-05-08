@@ -1,3 +1,6 @@
 {
+  "distributed-systems": 1,
+  "raft": 1,
+  "go": 1,
   "meta": 1
 }

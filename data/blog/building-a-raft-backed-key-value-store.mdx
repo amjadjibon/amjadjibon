@@ -1,0 +1,308 @@
+---
+title: 'Building a Raft-backed key-value store'
+date: '2026-05-08'
+tags: ['distributed-systems', 'raft', 'go']
+draft: false
+summary: 'A practical walkthrough of building raftd: a distributed key-value store using Raft for consensus and gRPC for client and node communication.'
+---
+
+Distributed systems are easier to talk about than they are to build.
+
+At the diagram level, a replicated key-value store sounds straightforward: accept writes, copy them to a few nodes, and read them back later. The hard part starts when one node dies, a network link becomes unreliable, two machines disagree about who is in charge, or a client retries an operation at exactly the wrong time.
+
+That is the reason I built [`raftd`](https://github.com/amjadjibon/raftd): a small distributed key-value store in Go, backed by the HashiCorp Raft implementation and exposed over gRPC. It is not meant to replace a production database. It is a project for understanding the mechanics that sit underneath systems like Consul, etcd, and distributed control planes.
+
+The useful lesson is not just "Raft elects a leader." The useful lesson is seeing how much system design is required around Raft before a replicated service starts behaving like a real system.
+
+## The shape of the system
+
+At a high level, `raftd` has three responsibilities:
+
+1. Accept client commands such as `GET`, `SET`, and `DELETE`.
+2. Replicate state-changing commands through Raft.
+3. Apply committed commands to a local state machine.
+
+Raft handles consensus, but it does not define the application state for you. The application still needs to decide what a command looks like, how commands are serialized, how they are applied, and how reads are served.
+
+The rough architecture looks like this:
+
+```text
+client
+  |
+  | gRPC
+  v
+raftd node
+  |
+  | propose command
+  v
+Raft log
+  |
+  | commit
+  v
+finite state machine
+  |
+  v
+key-value map
+```
+
+Every node runs the same service, but only the current leader should accept writes. Followers participate in replication and can redirect clients to the leader.
+
+## Why Raft?
+
+Raft is a consensus algorithm for managing replicated logs. Instead of each node directly mutating local state whenever it receives a write, nodes agree on an ordered log of commands. Once a command is committed, each node applies it to its own state machine in the same order.
+
+That ordered log is the important abstraction.
+
+If every healthy node applies the same commands in the same order, the nodes converge on the same state. For a key-value store, that means commands like this:
+
+```json
+{ "op": "set", "key": "feature_flag", "value": "enabled" }
+{ "op": "delete", "key": "old_config" }
+```
+
+The state machine does not need to know about elections or replication. It only needs to apply committed commands deterministically.
+
+That separation is what makes Raft useful:
+
+- Raft decides which commands are committed and in what order.
+- The application decides what those commands mean.
+
+## Leader election
+
+In a Raft cluster, one node acts as the leader. Clients send writes to that leader, and the leader replicates log entries to the followers.
+
+If the leader stops sending heartbeats, followers eventually start an election. A candidate asks other nodes for votes, and if it receives a majority, it becomes the new leader.
+
+This sounds clean, but the implementation details matter:
+
+- Election timeouts need enough jitter to avoid repeated split votes.
+- Nodes need stable identities across restarts.
+- The cluster needs persistent storage so terms, votes, and logs survive process failures.
+- Clients need a strategy for discovering the current leader.
+
+In a toy system, it is tempting to hard-code a leader address and move on. That avoids one of the most important parts of the problem. A real client needs to handle `not leader` responses, reconnect, retry, and avoid assuming leadership is permanent.
+
+Leadership is a lease on responsibility, not a property of a machine.
+
+## Log replication
+
+When the leader receives a write, it appends the command to its local Raft log and asks followers to append the same entry. Once the entry is replicated to a majority of nodes, Raft can commit it.
+
+Only then should the key-value store apply the command.
+
+That distinction is easy to miss. Appending a log entry is not the same as committing it. A leader can receive a command, append it locally, and fail before the command reaches a majority. If the system exposed that write as successful too early, clients could observe data that the cluster later forgets.
+
+For `raftd`, the write path is:
+
+1. Client sends `SET key value` to the leader.
+2. The leader encodes the command.
+3. The command is submitted to Raft.
+4. Raft replicates the log entry.
+5. Once committed, the finite state machine applies it.
+6. The client receives success.
+
+That flow is slower than a single-node map write, but it buys a stronger property: a successful write has been accepted by the cluster, not just by one process.
+
+## A small write path in Go
+
+The core idea is that writes should be submitted to Raft as commands. The handler does not directly mutate the map. It packages the request, gives it to Raft, and waits for the command to be committed.
+
+The real project has more wiring around configuration, transport, and error handling, but the shape of the write path looks like this:
+
+```go
+type Command struct {
+	Op    string `json:"op"`
+	Key   string `json:"key"`
+	Value string `json:"value,omitempty"`
+}
+
+type Server struct {
+	raft *raft.Raft
+}
+
+func (s *Server) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
+	if s.raft.State() != raft.Leader {
+		return nil, status.Error(codes.FailedPrecondition, "node is not the raft leader")
+	}
+
+	cmd := Command{
+		Op:    "set",
+		Key:   req.Key,
+		Value: req.Value,
+	}
+
+	payload, err := json.Marshal(cmd)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "marshal command: %v", err)
+	}
+
+	future := s.raft.Apply(payload, 5*time.Second)
+	if err := future.Error(); err != nil {
+		return nil, status.Errorf(codes.Unavailable, "apply raft command: %v", err)
+	}
+
+	return &pb.SetResponse{Ok: true}, nil
+}
+```
+
+That one detail changes the system model. The gRPC handler receives the request, but Raft owns the decision about when the write is durable enough to apply.
+
+## The finite state machine
+
+The application state machine is where the key-value behavior lives.
+
+For a simple store, the state machine can be a map protected by a mutex:
+
+```go
+type command struct {
+	Op    string `json:"op"`
+	Key   string `json:"key"`
+	Value string `json:"value,omitempty"`
+}
+```
+
+The apply path is intentionally boring:
+
+```go
+func (s *store) apply(cmd command) {
+	switch cmd.Op {
+	case "set":
+		s.data[cmd.Key] = cmd.Value
+	case "delete":
+		delete(s.data, cmd.Key)
+	}
+}
+```
+
+In a HashiCorp Raft state machine, that logic sits behind the `Apply` method. Raft calls it only after the log entry has been committed:
+
+```go
+type FSM struct {
+	mu   sync.RWMutex
+	data map[string]string
+}
+
+func (f *FSM) Apply(logEntry *raft.Log) interface{} {
+	var cmd Command
+	if err := json.Unmarshal(logEntry.Data, &cmd); err != nil {
+		return err
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	switch cmd.Op {
+	case "set":
+		f.data[cmd.Key] = cmd.Value
+	case "delete":
+		delete(f.data, cmd.Key)
+	default:
+		return fmt.Errorf("unknown command: %s", cmd.Op)
+	}
+
+	return nil
+}
+```
+
+The boring part is a feature. Once a command is committed, applying it should be deterministic and unsurprising. The state machine should avoid hidden external dependencies, random behavior, wall-clock decisions, or anything else that could cause two nodes to apply the same log entry differently.
+
+Raft gives you replicated order. Determinism gives you replicated state.
+
+## gRPC boundaries
+
+I used gRPC because it makes the service boundary explicit. The key-value store needs APIs for client operations and cluster-level behavior.
+
+A minimal client-facing API might look like:
+
+```protobuf
+service KV {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Set(SetRequest) returns (SetResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
+```
+
+The important design choice is how the service behaves when the node receiving the request is not the leader.
+
+There are a few options:
+
+- Return an error and let the client retry elsewhere.
+- Return the known leader address.
+- Proxy the write to the leader.
+
+For a learning project, returning the leader address keeps the behavior visible. It forces the client to understand that leadership can move, and it keeps the server implementation simpler.
+
+Proxying can improve ergonomics, but it also hides topology and adds another failure path. If the follower cannot reach the leader, the client now has to debug two request paths instead of one.
+
+## Reads are not free
+
+Writes obviously need consensus. Reads are more subtle.
+
+If a follower serves reads directly from its local state, the response may be stale. That may be acceptable for some systems, but it should be an explicit decision.
+
+There are a few common read strategies:
+
+- Serve all reads from the leader.
+- Allow stale reads from followers.
+- Use a linearizable read path that verifies the leader is still current.
+
+For a simple key-value store, leader reads are the easiest model to reason about. They are not always the fastest, but they avoid surprising clients with stale data.
+
+The deeper lesson is that "read" is not a single consistency model. A system should make the tradeoff clear instead of accidentally choosing one through implementation convenience.
+
+## Snapshots and log growth
+
+A replicated log cannot grow forever.
+
+If every write stays in the log permanently, disk usage grows without bound and new nodes take longer to catch up. Raft implementations solve this with snapshots: compact representations of the current state at a point in the log.
+
+For a key-value store, a snapshot can be a serialized copy of the map. Once the snapshot is safely stored, older log entries covered by that snapshot can be discarded.
+
+Snapshotting introduces another set of practical concerns:
+
+- The snapshot must represent a consistent view of the state machine.
+- Restoring from a snapshot must produce the same state as replaying the log.
+- Large snapshots should not block normal request handling for too long.
+- Corrupt or partial snapshots need to fail safely.
+
+This is one of the places where real systems become less elegant than the algorithm description. The consensus algorithm gives you a framework, but persistence and recovery still need careful engineering.
+
+## Where demos become real systems
+
+The first version of a Raft-backed store usually focuses on the happy path:
+
+- Start three nodes.
+- Elect a leader.
+- Write a key.
+- Read the key.
+- Kill the leader.
+- Elect a new leader.
+- Read the key again.
+
+That demo is useful, but it is not enough.
+
+The real behavior shows up in less tidy cases:
+
+- A client retries a write after a timeout.
+- A leader receives a write while losing leadership.
+- A follower is down long enough to need a snapshot.
+- A node restarts with old local state.
+- Network latency causes elections during load.
+- A disk write fails.
+- Two deploys happen while the cluster is already unhealthy.
+
+Those are the cases that turn a distributed systems project from an algorithm exercise into an engineering exercise.
+
+## What I learned
+
+Building `raftd` reinforced a few lessons.
+
+First, consensus is only one part of a replicated system. You still need API design, storage, observability, process management, configuration, and operational discipline.
+
+Second, correctness depends on where you draw boundaries. A command should not mutate application state until Raft commits it. A follower should not pretend to be able to handle writes. A client should not assume the node it talked to five seconds ago is still the leader.
+
+Third, simple state machines are easier to trust. The less magic inside the apply path, the easier it is to reason about recovery and replication.
+
+Finally, distributed systems are mostly about handling uncertainty. Raft gives structure to some of that uncertainty, but the rest still belongs to the application.
+
+That is why small projects like `raftd` are worth building. They make the hidden parts visible. You can read about leader election and log replication, but implementing the service around them is where the concepts become real.
