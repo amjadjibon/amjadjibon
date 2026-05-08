@@ -72,6 +72,8 @@ export const metadata: Metadata = {
   },
 }
 
+const AURORA_COLORS = ['#d87943', '#ececec', '#d87943']
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
@@ -89,7 +91,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <ThemeProviders>
           <div className="pointer-events-none fixed inset-0 z-0">
-            <Aurora colorStops={['#d87943', '#ececec', '#d87943']} amplitude={0.55} blend={0.35} />
+            <Aurora colorStops={AURORA_COLORS} amplitude={0.55} blend={0.35} />
           </div>
           <div className="relative z-10">
             <div className="pointer-events-none fixed inset-0 z-0 bg-white/70 dark:bg-black/55 backdrop-blur-[1px]" />
