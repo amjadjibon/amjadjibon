@@ -2,6 +2,7 @@ import '../css/tailwind.css'
 import 'pliny/search/algolia.css'
 import 'remark-github-blockquote-alert/alert.css'
 
+import { SpeedInsights } from '@vercel/speed-insights/next'
 import type { Metadata } from 'next'
 import { Geist_Mono, JetBrains_Mono } from 'next/font/google'
 import Script from 'next/script'
@@ -107,6 +108,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </SectionContainer>
             </div>
           </div>
+          <SpeedInsights />
         </ThemeProviders>
       </body>
     </html>
