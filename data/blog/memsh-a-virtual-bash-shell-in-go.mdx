@@ -1,0 +1,167 @@
+---
+title: 'memsh: a virtual bash shell in Go'
+date: '2026-05-23'
+tags: ['go', 'shell', 'sandbox', 'interpreter', 'mvm']
+draft: false
+summary: 'memsh is a virtual bash shell that runs entirely in memory. No files touch your disk, no OS commands leak out, and every built-in — including a Go interpreter — is a native Go plugin.'
+---
+
+Most shells are wrappers around the operating system. They fork processes, open real files, and inherit the host environment. That is exactly what you want when you are writing a deploy script or grepping through logs. It is exactly what you do not want when you need a sandboxed scripting environment, an LLM tool that cannot touch production, or a testable shell runtime embedded in a Go program.
+
+`memsh` takes a different approach: the shell runs against an `afero.MemMapFs` in-memory filesystem. The real OS filesystem is never touched. External OS commands are blocked by default. Every command — `ls`, `grep`, `jq`, `sqlite3`, `git`, and now `go` — is a native Go plugin registered at startup.
+
+## What it is
+
+```bash
+memsh                              # interactive REPL
+echo "ls /tmp" | memsh             # pipe a script
+memsh ./etl-pipeline.sh            # run a script file
+memsh serve                        # expose over HTTP with session-scoped virtual FS
+memsh mcp                          # MCP server for LLM tool use
+```
+
+The shell parser and interpreter come from [`mvdan.cc/sh/v3`](https://github.com/mvdan/sh). Pipes, redirects, `&&`, subshells, and aliases all work. What does not work is reaching outside the sandbox — which is the point.
+
+## The plugin model
+
+Every command is a Go struct implementing a two-method interface:
+
+```go
+type Plugin interface {
+    Name() string
+    Run(ctx context.Context, args []string) error
+}
+```
+
+Inside `Run`, two context values give you everything you need:
+
+```go
+hc := interp.HandlerCtx(ctx)  // pipe-aware stdin / stdout / stderr
+sc := plugins.ShellCtx(ctx)   // virtual FS, cwd, env, ResolvePath
+```
+
+You never touch `os.Stdout`. You never open a real file. The virtual filesystem and the pipe graph are handed to you by the runtime.
+
+Adding a command is three steps: create a file in `pkg/shell/plugins/native/`, implement the interface, add it to `defaultNativePlugins()` in `defaults.go`.
+
+## Running Go inside the shell
+
+The most recent addition is a `go` command backed by [MVM](https://github.com/mvm-sh/mvm), a pure-Go interpreter that compiles Go source to bytecode and runs it on a stack-based VM. It emulates the real `go` toolchain interface:
+
+```bash
+# go run — execute a source file from the virtual filesystem
+echo 'package main' > /main.go
+echo 'func main() { fmt.Println("hello") }' >> /main.go
+go run /main.go
+# hello
+
+# go test — find and run Test* functions
+echo 'package main' > /math_test.go
+echo 'import "testing"' >> /math_test.go
+echo 'func TestAdd(t *testing.T) { if 1+1 != 2 { t.Error("broken") } }' >> /math_test.go
+go test / -v
+# === RUN   TestAdd
+# --- PASS: TestAdd
+# ok
+
+# go fmt — gofmt source in place
+echo 'package main' > /ugly.go
+echo 'func main(){fmt.Println("hi")}' >> /ugly.go
+go fmt /ugly.go
+cat /ugly.go
+# package main
+#
+# func main() { fmt.Println("hi") }
+
+# stdin pipe — stdlib auto-imported, no package declaration needed
+echo 'fmt.Println(strings.ToUpper("hello"))' | go
+# HELLO
+```
+
+`go test` rewrites `*testing.T` to a built-in shim at code-generation time (MVM does not fully support `testing.RunTests`). The shim covers `t.Error`, `t.Errorf`, `t.Fatal`, `t.Fatalf`, `t.Log`, `t.Run`, and `t.Skip`.
+
+## A five-stage pipeline in twelve lines
+
+Here is what memsh looks like embedded in a Go program. The script runs entirely in memory — no temp files, no cleanup, no disk I/O.
+
+```go
+var out bytes.Buffer
+sh, _ := shell.New(shell.WithStdIO(nil, &out, &out))
+defer sh.Close()
+
+sh.Run(ctx, `
+    cat > /sales.json << 'EOF'
+    [{"product":"widget","amount":120},{"product":"gadget","amount":340}]
+    EOF
+
+    # filter with jq
+    jq -r '.[] | select(.amount > 200) | .product' /sales.json
+
+    # aggregate in SQLite
+    sqlite3 /db << 'SQL'
+    CREATE TABLE s (product TEXT, amount INT);
+    INSERT INTO s VALUES ('widget',120),('gadget',340);
+    SELECT product, amount FROM s ORDER BY amount DESC;
+    SQL
+
+    # validate with Go
+    echo 'package main' > /check.go
+    echo 'func main() { fmt.Println(120+340) }' >> /check.go
+    go run /check.go
+`)
+
+fmt.Print(out.String())
+// gadget
+// gadget|340
+// widget|120
+// 460
+```
+
+Each stage — `jq`, `sqlite3`, `go run` — is a native Go plugin. No subprocesses. No temp files. One `sh.Run` call.
+
+## Built-in commands
+
+The shell ships with sixty-plus commands out of the box:
+
+| Category | Commands |
+|---|---|
+| Filesystem | `ls`, `cd`, `cp`, `mv`, `rm`, `mkdir`, `find`, `stat`, `du`, `df` |
+| Text | `cat`, `grep`, `sed`, `awk`, `sort`, `uniq`, `cut`, `wc`, `tr`, `head`, `tail` |
+| Data | `jq`, `yq`, `base64`, `sqlite3`, `bc`, `expr` |
+| Scripting | `go`, `lua`, `goja` (JavaScript ES2020+) |
+| Archive | `tar`, `gzip`, `zip` |
+| Network | `curl`, `ssh` |
+| VCS | `git` (pure Go, via go-git) |
+| Checksums | `md5sum`, `sha256sum`, and four others |
+| Scheduling | `crontab` |
+
+WASM plugins extend this further: Python 3.12, Ruby 3.2, and PHP 8.2 runtimes install from a single command.
+
+```bash
+go run . plugin install python
+python3 -c 'print("hello from wasm")'
+```
+
+## The HTTP server and MCP
+
+`memsh serve` exposes the shell over HTTP. Each session gets its own `afero.Fs` that persists across requests — send `X-Session-ID: <id>` on `POST /run` and the virtual filesystem survives between calls.
+
+`memsh mcp` starts a Model Context Protocol server. Any MCP-compatible LLM client gets a `memsh` tool: it can run bash-like commands in a sandboxed environment without ever touching the real filesystem.
+
+```json
+{
+  "mcpServers": {
+    "memsh": { "command": "memsh", "args": ["mcp"] }
+  }
+}
+```
+
+## What it is good for
+
+- **Sandboxed script execution** — run scripts from user input, CI pipelines, or LLM output without exposing the host
+- **Embedded shell in Go programs** — one `shell.New()` call, no subprocess, full bash-like syntax
+- **Test fixtures** — seed the virtual FS, run a script, assert output; no temp dirs, no cleanup
+- **ETL pipelines** — ingest JSON or YAML, transform with `jq`/`awk`/`yq`, sink to `sqlite3`
+- **LLM tool** — give a model a shell that cannot escape the sandbox
+
+The code is at [github.com/amjadjibon/memsh](https://github.com/amjadjibon/memsh).
