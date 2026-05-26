@@ -8,11 +8,12 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 const ContentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-eval' 'unsafe-inline' giscus.app analytics.umami.is;
-  style-src 'self' 'unsafe-inline';
+  script-src-elem 'self' 'unsafe-inline' giscus.app analytics.umami.is;
+  style-src 'self' 'unsafe-inline' giscus.app;
   img-src * blob: data:;
   media-src *.s3.amazonaws.com;
-  connect-src *;
-  font-src 'self';
+  connect-src * buttondown.email;
+  font-src 'self' giscus.app;
   frame-src giscus.app
 `
 

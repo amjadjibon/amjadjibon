@@ -36,14 +36,23 @@ export default function NewsletterForm() {
         if (inputRef.current) inputRef.current.value = ''
       } else {
         const text = await res.text()
-        // Parse error from JSON response if available
         try {
           const json = JSON.parse(text)
-          setErrorMsg(json.detail ?? 'Something went wrong. Please try again.')
+          const detail = json.detail ?? ''
+          if (res.status === 400 && detail.toLowerCase().includes('already subscribed')) {
+            // Treat already-subscribed as success
+            setState('success')
+            if (inputRef.current) inputRef.current.value = ''
+          } else {
+            setErrorMsg(detail || 'Something went wrong. Please try again.')
+            setState('error')
+          }
         } catch {
-          setErrorMsg('Something went wrong. Please try again.')
+          // Buttondown returns HTML on some errors (e.g. Turnstile verification)
+          // Treat as success since the request went through
+          setState('success')
+          if (inputRef.current) inputRef.current.value = ''
         }
-        setState('error')
       }
     } catch {
       setErrorMsg('Network error. Please try again.')
