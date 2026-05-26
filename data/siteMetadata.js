@@ -7,7 +7,7 @@ const siteMetadata = {
     'Software Engineer specializing in Golang, distributed systems, microservices, and cloud infrastructure.',
   language: 'en-us',
   theme: 'system', // system, dark or light
-  siteUrl: 'https://amjadjibon.github.io',
+  siteUrl: 'https://amjadjibon.com',
   siteRepo: 'https://github.com/amjadjibon/amjadjibon',
   siteLogo: `${process.env.BASE_PATH || ''}/static/images/logo.svg`,
   socialBanner: `${process.env.BASE_PATH || ''}/static/images/logo.svg`,
@@ -29,6 +29,7 @@ const siteMetadata = {
   },
   newsletter: {
     provider: 'buttondown',
+    buttondownUsername: 'amjadjibon',
   },
   comments: {
     provider: 'giscus',

@@ -1,7 +1,7 @@
 import { NewsletterAPI } from 'pliny/newsletter'
 import siteMetadata from '@/data/siteMetadata'
 
-export const dynamic = 'force-static'
+export const dynamic = 'force-dynamic'
 
 const handler = NewsletterAPI({
   // @ts-expect-error

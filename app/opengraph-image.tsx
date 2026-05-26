@@ -30,7 +30,7 @@ export default function ogImage() {
           marginBottom: '24px',
         }}
       >
-        amjadjibon.github.io
+        amjadjibon.com
       </div>
       <div
         style={{

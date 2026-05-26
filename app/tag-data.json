@@ -1,6 +1,10 @@
 {
   "distributed-systems": 1,
   "raft": 1,
-  "go": 1,
-  "meta": 1
+  "go": 2,
+  "meta": 1,
+  "shell": 1,
+  "sandbox": 1,
+  "interpreter": 1,
+  "mvm": 1
 }
