@@ -1,0 +1,1197 @@
+---
+title: 'AWS EC2: A Complete Tutorial'
+date: '2026-06-21'
+tags: ['aws', 'ec2', 'cloud', 'infrastructure', 'devops']
+draft: false
+summary: 'A comprehensive guide to AWS EC2 covering instance types, purchasing options, security groups, placement strategies, AMIs, and everything you need to know to run compute workloads on AWS.'
+authors: ['default']
+layout: 'PostLayout'
+---
+
+{/* cspell:words BYOL Gbps HDFS hyper-threading instanceids fileb Burstable xlarge eipalloc eipassoc xvda */}
+
+## Introduction
+
+Amazon EC2 (Elastic Compute Cloud) is a **regional**, **Infrastructure as a Service (IaaS)** offering that provides resizable compute capacity in the cloud. A few key fundamentals to keep in mind before diving in:
+
+- Stopping and starting an instance may change its **public IP** but will never change its **private IP**
+- **AWS Compute Optimizer** analyzes your usage patterns and recommends optimal AWS Compute resources for your workloads
+- There is a vCPU-based On-Demand Instance **soft limit** per region (can be increased via support request)
+
+---
+
+## User Data
+
+EC2 User Data is a **bootstrap script** that runs once on the very first launch of an instance. It's used to automate **dynamic** boot tasks that can't be baked into an AMI:
+
+- Installing OS updates
+- Installing software packages
+- Downloading common files from the internet
+- Any first-run configuration
+
+User Data runs with **root user privilege**, so no `sudo` is required inside the script.
+
+```bash
+#!/bin/bash
+yum update -y
+yum install -y httpd
+systemctl start httpd
+systemctl enable httpd
+echo "<h1>Hello from EC2</h1>" > /var/www/html/index.html
+```
+
+You can also pass a User Data script at launch time via the AWS CLI:
+
+```bash
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type t3.micro \
+  --key-name my-key \
+  --security-group-ids sg-12345678 \
+  --subnet-id subnet-12345678 \
+  --user-data file://user-data.sh \
+  --count 1
+```
+
+---
+
+## Instance Classes
+
+EC2 instances come in several families, each optimized for different workloads.
+
+### General Purpose
+
+Balanced compute, memory, and networking. Great for:
+
+- Web servers
+- Code repositories
+- Small to medium databases
+
+Examples: `t3`, `t4g`, `m6i`, `m7g`
+
+### Compute Optimized
+
+High-performance processors for compute-intensive workloads:
+
+- Batch processing
+- Media transcoding
+- High Performance Computing (HPC)
+- Gaming servers
+
+Examples: `c6i`, `c7g`
+
+### Memory Optimized
+
+Fast in-memory performance for large datasets:
+
+- In-memory databases (Redis, Memcached)
+- Distributed web caches
+- Real-time big data analytics
+
+Examples: `r6i`, `x2idn`, `z1d`
+
+### Storage Optimized
+
+High sequential read/write access to large local datasets:
+
+- OLTP systems
+- Distributed File Systems (DFS)
+- NoSQL databases
+
+Examples: `i4i`, `d3`, `h1`
+
+```bash
+# List all available instance types in a region
+aws ec2 describe-instance-types \
+  --query 'InstanceTypes[*].[InstanceType,VCpuInfo.DefaultVCpus,MemoryInfo.SizeInMiB]' \
+  --output table
+
+# Filter by instance family
+aws ec2 describe-instance-types \
+  --filters "Name=instance-type,Values=c6i.*" \
+  --query 'InstanceTypes[*].[InstanceType,VCpuInfo.DefaultVCpus,MemoryInfo.SizeInMiB]' \
+  --output table
+```
+
+---
+
+## Security Groups
+
+Security Groups act as a **virtual firewall** for EC2 instances. They operate at the ENI level — if a request is blocked, the instance never even sees it.
+
+**Key characteristics:**
+
+- Contain **only Allow rules** (no explicit deny)
+- Rules can reference resources by **IP** or by **Security Group ID**
+- Bound to a **VPC** (and therefore to a region)
+
+### Default vs. New Security Groups
+
+| | Default SG | New SG |
+|---|---|---|
+| Inbound | Traffic from same SG allowed | All blocked |
+| Outbound | All allowed | All allowed |
+
+**Best practice:** Maintain a **separate security group dedicated to SSH access** so you can tightly control which IPs can connect.
+
+> Blocked requests will result in a **504 Timeout** error, not a connection refused — because the packet is dropped at the firewall before reaching the instance.
+
+```bash
+# Create a security group
+aws ec2 create-security-group \
+  --group-name my-web-sg \
+  --description "Web server security group" \
+  --vpc-id vpc-12345678
+
+# Allow inbound HTTP
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-12345678 \
+  --protocol tcp \
+  --port 80 \
+  --cidr 0.0.0.0/0
+
+# Allow inbound HTTPS
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-12345678 \
+  --protocol tcp \
+  --port 443 \
+  --cidr 0.0.0.0/0
+
+# Allow inbound MySQL only from another security group (e.g. app tier)
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-db-12345678 \
+  --protocol tcp \
+  --port 3306 \
+  --source-group sg-app-12345678
+
+# Create a dedicated SSH security group
+aws ec2 create-security-group \
+  --group-name ssh-access-sg \
+  --description "SSH access - restrict to known IPs"
+
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-ssh-12345678 \
+  --protocol tcp \
+  --port 22 \
+  --cidr 203.0.113.0/24
+
+# Describe security group rules
+aws ec2 describe-security-groups --group-ids sg-12345678
+
+# Remove a rule
+aws ec2 revoke-security-group-ingress \
+  --group-id sg-12345678 \
+  --protocol tcp \
+  --port 80 \
+  --cidr 0.0.0.0/0
+```
+
+---
+
+## Elastic Network Interface (ENI)
+
+An ENI is a virtual network card that gives an EC2 instance its private IP address.
+
+- A **primary ENI** is created and attached on instance creation, and deleted automatically when the instance terminates
+- You can create **additional ENIs** and attach them to an instance to give it multiple private IPs
+- ENIs can be **detached and reattached** across instances (useful for failover)
+- ENIs are **tied to the subnet**, and therefore to a specific AZ
+
+This makes ENIs useful for creating dual-homed instances or for implementing low-level network failover.
+
+```bash
+# Create an additional ENI
+aws ec2 create-network-interface \
+  --subnet-id subnet-12345678 \
+  --description "Secondary network interface" \
+  --groups sg-12345678
+
+# Attach the ENI to an instance (device-index 0 is the primary)
+aws ec2 attach-network-interface \
+  --network-interface-id eni-12345678 \
+  --instance-id i-1234567890abcdef0 \
+  --device-index 1
+
+# Detach an ENI (get the attachment ID first)
+aws ec2 describe-network-interfaces \
+  --network-interface-ids eni-12345678 \
+  --query 'NetworkInterfaces[0].Attachment.AttachmentId'
+
+aws ec2 detach-network-interface \
+  --attachment-id eni-attach-12345678
+
+# Describe ENIs in a subnet
+aws ec2 describe-network-interfaces \
+  --filters "Name=subnet-id,Values=subnet-12345678"
+```
+
+---
+
+## Instance Profile (IAM Roles)
+
+**Never enter AWS credentials directly into an EC2 instance.** Instead, attach an IAM Role via an **instance profile**.
+
+```bash
+# Create the instance profile
+aws iam create-instance-profile --instance-profile-name MyProfile
+
+# Add a role to the instance profile
+aws iam add-role-to-instance-profile \
+  --instance-profile-name MyProfile \
+  --role-name MyEC2Role
+
+# Associate the instance profile with a running EC2 instance
+aws ec2 associate-iam-instance-profile \
+  --instance-id i-1234567890abcdef0 \
+  --iam-instance-profile Name=MyProfile
+
+# Or attach it at launch time
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type t3.micro \
+  --iam-instance-profile Name=MyProfile \
+  --key-name my-key
+
+# Verify the attached profile
+aws ec2 describe-iam-instance-profile-associations \
+  --filters "Name=instance-id,Values=i-1234567890abcdef0"
+```
+
+When an IAM role is attached, the AWS CLI inside the instance automatically retrieves temporary credentials from the instance metadata endpoint.
+
+---
+
+## Purchasing Options
+
+Choosing the right purchasing model is one of the most impactful cost decisions you'll make.
+
+### On-Demand Instances
+
+- Pay per second/hour — no upfront commitment
+- Highest cost per unit of time
+- Best for **short-term, unpredictable** workloads
+
+```bash
+# Launch an On-Demand instance
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type t3.micro \
+  --key-name my-key \
+  --security-group-ids sg-12345678 \
+  --subnet-id subnet-12345678 \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=my-server}]'
+```
+
+### Standard Reserved Instances
+
+- 1-year or 3-year reservation
+- Significant discount over On-Demand
+- Best for **steady-state** workloads (e.g., always-on databases)
+- Unused instances can be **sold on the Reserved Instance Marketplace**
+
+```bash
+# Describe available Reserved Instance offerings
+aws ec2 describe-reserved-instances-offerings \
+  --instance-type m5.large \
+  --product-description "Linux/UNIX" \
+  --offering-class standard \
+  --query 'ReservedInstancesOfferings[*].[Duration,FixedPrice,UsagePrice,OfferingType]' \
+  --output table
+
+# Purchase a Reserved Instance
+aws ec2 purchase-reserved-instances-offering \
+  --reserved-instances-offering-id <offering-id> \
+  --instance-count 1
+```
+
+### Convertible Reserved Instances
+
+- Like Standard Reserved, but you can **change the instance type**
+- Slightly lower discount than Standard
+- **Cannot** be sold on the Marketplace
+
+### Scheduled Reserved Instances
+
+- Reserve capacity for a specific recurring time window (e.g., weekdays 9AM–5PM)
+
+### Spot Instances
+
+- Bid-based pricing — you set a max hourly price
+- Instance is interrupted when the Spot price exceeds your bid
+- Interruption behavior options: **stop**, **hibernate**, or **terminate** (not reboot)
+- **Spot Blocks** are designed to run without interruption for a defined duration
+- Best for fault-tolerant, flexible workloads:
+  - Distributed batch jobs
+  - Data analysis
+  - CI/CD pipelines
+
+### Dedicated Hosts
+
+- Physical server hardware allocated **exclusively to your company**
+- 3-year reservation
+- Billed per host
+- Required for **`BYOL` (Bring Your Own License)** or strict regulatory compliance
+
+### Dedicated Instances
+
+- Instances run on **hardware dedicated to your AWS account**, but not necessarily to you exclusively (other instances from the same account may share it)
+- Billed per instance
+- Cheaper than Dedicated Hosts
+- No control over instance placement
+
+### Capacity Reservations (Zonal Reserved)
+
+- Reserve capacity in a specific AZ **without a 1 or 3-year commitment**
+- You pay the On-Demand rate whether or not you use it
+- Useful for critical workloads that must be able to launch on demand
+- Requires: AZ, instance count, and instance attributes
+- Note: **Regional reserved instances do not provide capacity reservations**
+
+```bash
+# Create a Capacity Reservation in us-east-1a
+aws ec2 create-capacity-reservation \
+  --instance-type m5.large \
+  --instance-platform "Linux/UNIX" \
+  --availability-zone us-east-1a \
+  --instance-count 5 \
+  --instance-match-criteria targeted
+
+# Launch into the specific Capacity Reservation
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type m5.large \
+  --capacity-reservation-specification \
+    'CapacityReservationTarget={CapacityReservationId=cr-12345678}'
+```
+
+---
+
+## Spot Instances: Deep Dive
+
+### Spot Request Types
+
+| Type | Behavior |
+|---|---|
+| **One-time** | Fulfills once, then closes |
+| **Persistent** | Stays active; re-opens after interruption or manual stop |
+
+Rules for cancelling:
+- You can only cancel **open**, **active**, or **disabled** spot requests
+- **Cancelling a spot request does NOT terminate the instance** — you must terminate instances separately after cancelling the request
+
+```bash
+# Check current Spot price history
+aws ec2 describe-spot-price-history \
+  --instance-types t3.micro m5.large \
+  --product-descriptions "Linux/UNIX" \
+  --start-time 2026-06-20T00:00:00 \
+  --query 'SpotPriceHistory[*].[InstanceType,SpotPrice,AvailabilityZone,Timestamp]' \
+  --output table
+
+# Request a one-time Spot instance
+aws ec2 request-spot-instances \
+  --instance-count 1 \
+  --type one-time \
+  --launch-specification '{
+    "ImageId": "ami-0abcdef1234567890",
+    "InstanceType": "m5.large",
+    "KeyName": "my-key",
+    "SecurityGroupIds": ["sg-12345678"],
+    "SubnetId": "subnet-12345678"
+  }'
+
+# Request a persistent Spot instance with max price
+aws ec2 request-spot-instances \
+  --instance-count 1 \
+  --type persistent \
+  --spot-price "0.05" \
+  --instance-interruption-behavior stop \
+  --launch-specification '{
+    "ImageId": "ami-0abcdef1234567890",
+    "InstanceType": "m5.large",
+    "KeyName": "my-key"
+  }'
+
+# Describe your Spot requests
+aws ec2 describe-spot-instance-requests \
+  --query 'SpotInstanceRequests[*].[SpotInstanceRequestId,State,InstanceId,SpotPrice]' \
+  --output table
+
+# Cancel a Spot request (does NOT terminate the instance)
+aws ec2 cancel-spot-instance-requests \
+  --spot-instance-request-ids sir-12345678
+
+# Then terminate the instance manually
+aws ec2 terminate-instances --instance-ids i-1234567890abcdef0
+```
+
+### Spot Fleets
+
+A Spot Fleet is a combination of **Spot + On-Demand instances** that targets a capacity or cost goal. On-Demand instances require a **Launch Template**.
+
+Allocation strategies:
+
+| Strategy | Description | Best For |
+|---|---|---|
+| `lowestPrice` | Pick the cheapest pool | Cost optimization, short workloads |
+| `diversified` | Spread across all pools | Availability, long-running workloads |
+| `capacityOptimized` | Choose pool with most available capacity | Minimizing interruptions |
+
+```bash
+# Create a Spot Fleet with lowestPrice strategy
+aws ec2 request-spot-fleet --spot-fleet-request-config '{
+  "IamFleetRole": "arn:aws:iam::123456789012:role/AmazonEC2SpotFleetRole",
+  "AllocationStrategy": "lowestPrice",
+  "TargetCapacity": 10,
+  "SpotPrice": "0.10",
+  "LaunchSpecifications": [
+    {
+      "ImageId": "ami-0abcdef1234567890",
+      "InstanceType": "m5.large",
+      "SubnetId": "subnet-12345678"
+    },
+    {
+      "ImageId": "ami-0abcdef1234567890",
+      "InstanceType": "m5.xlarge",
+      "SubnetId": "subnet-12345678"
+    }
+  ]
+}'
+
+# Describe Spot Fleet requests
+aws ec2 describe-spot-fleet-requests \
+  --query 'SpotFleetRequestConfigs[*].[SpotFleetRequestId,SpotFleetRequestState,ActivityStatus]' \
+  --output table
+
+# Cancel a Spot Fleet
+aws ec2 cancel-spot-fleet-requests \
+  --spot-fleet-request-ids sfr-12345678 \
+  --terminate-instances
+```
+
+---
+
+## Elastic IP
+
+An Elastic IP (EIP) is a **static public IPv4 address** you own until you explicitly release it.
+
+- Can be attached to an instance even when it's stopped
+- Soft limit of **5 EIPs per account** per region (can be increased)
+- **No charge** when all of the following are true:
+  - The EIP is associated with a running EC2 instance
+  - The instance has only **one** Elastic IP attached
+
+If you hold an EIP without associating it with a running instance, AWS charges a small hourly fee to discourage address hoarding.
+
+```bash
+# Allocate a new Elastic IP
+aws ec2 allocate-address --domain vpc
+
+# Associate EIP with an instance
+aws ec2 associate-address \
+  --instance-id i-1234567890abcdef0 \
+  --allocation-id eipalloc-12345678
+
+# Associate EIP with a specific ENI
+aws ec2 associate-address \
+  --network-interface-id eni-12345678 \
+  --allocation-id eipalloc-12345678
+
+# List all your Elastic IPs
+aws ec2 describe-addresses \
+  --query 'Addresses[*].[PublicIp,AllocationId,InstanceId,AssociationId]' \
+  --output table
+
+# Disassociate EIP from instance
+aws ec2 disassociate-address --association-id eipassoc-12345678
+
+# Release EIP (permanently, so you lose the address)
+aws ec2 release-address --allocation-id eipalloc-12345678
+```
+
+---
+
+## Placement Groups
+
+Placement groups control how EC2 instances are physically placed within the AWS infrastructure.
+
+### Cluster Placement Group
+
+All instances on the **same rack** in the same AZ.
+
+- **Pros:** Extremely low latency, up to `10 Gbps` between instances
+- **Cons:** Single point of failure (if the rack fails, all instances fail)
+- **Use case:** HPC, tightly coupled distributed computing
+
+### Spread Placement Group
+
+Each instance is on a **separate rack**.
+
+- Supports **Multi-AZ**
+- Max **7 instances per AZ** per placement group
+- **Use case:** Critical applications that require maximum availability
+
+### Partition Placement Group
+
+Instances are grouped into **partitions**, each partition on a separate rack.
+
+- Up to **7 partitions per AZ**
+- If a rack fails, only that partition is affected
+- **Use case:** Big data workloads — Hadoop, `HDFS`, HBase, Cassandra, Kafka
+
+> **Tip:** If you get a capacity error when launching into an existing placement group, try stopping and starting all instances in the group. This may migrate them to hardware with sufficient capacity.
+
+```bash
+# Create placement groups
+aws ec2 create-placement-group \
+  --group-name hpc-cluster-pg \
+  --strategy cluster
+
+aws ec2 create-placement-group \
+  --group-name critical-app-pg \
+  --strategy spread
+
+aws ec2 create-placement-group \
+  --group-name hadoop-pg \
+  --strategy partition \
+  --partition-count 3
+
+# Launch into a placement group
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type c5n.18xlarge \
+  --placement "GroupName=hpc-cluster-pg" \
+  --count 4
+
+# Describe placement groups
+aws ec2 describe-placement-groups \
+  --query 'PlacementGroups[*].[GroupName,Strategy,State,PartitionCount]' \
+  --output table
+
+# Delete a placement group (must be empty first)
+aws ec2 delete-placement-group --group-name hpc-cluster-pg
+```
+
+---
+
+## Instance States
+
+| State | EBS Root Volume | Billed? |
+|---|---|---|
+| Running | Preserved | Yes |
+| Stopped | Preserved | No |
+| Terminated | Destroyed | No |
+| Hibernating | Preserved (RAM saved to EBS) | No |
+| Stopping (preparing to hibernate) | Preserved | Yes (On-Demand) |
+| Standby (in ASG) | Preserved | Yes |
+
+```bash
+# Stop an instance
+aws ec2 stop-instances --instance-ids i-1234567890abcdef0
+
+# Start a stopped instance
+aws ec2 start-instances --instance-ids i-1234567890abcdef0
+
+# Hibernate an instance (instance must support hibernation)
+aws ec2 stop-instances \
+  --instance-ids i-1234567890abcdef0 \
+  --hibernate
+
+# Terminate an instance (irreversible — EBS root gets deleted)
+aws ec2 terminate-instances --instance-ids i-1234567890abcdef0
+
+# Reboot an instance (does not stop billing; OS restarts)
+aws ec2 reboot-instances --instance-ids i-1234567890abcdef0
+
+# Describe instance state
+aws ec2 describe-instances \
+  --instance-ids i-1234567890abcdef0 \
+  --query 'Reservations[0].Instances[0].[InstanceId,State.Name,PublicIpAddress,PrivateIpAddress]' \
+  --output table
+
+# Wait until instance is running
+aws ec2 wait instance-running --instance-ids i-1234567890abcdef0
+```
+
+### Hibernate
+
+Hibernation saves the **RAM contents to the EBS root volume**, allowing the instance to resume exactly where it left off:
+
+- OS does not shut down — significantly faster boot times
+- Previously running processes are resumed
+- Previously attached data volumes are reattached with the same instance ID
+- Best for applications with **long initialization times**
+- **Not supported on Spot Instances**
+- Maximum hibernation duration: **60 days**
+
+To enable hibernation, it must be configured **at launch time**:
+
+```bash
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type m5.large \
+  --hibernation-options Configured=true \
+  --block-device-mappings '[{
+    "DeviceName": "/dev/xvda",
+    "Ebs": {
+      "VolumeSize": 30,
+      "Encrypted": true
+    }
+  }]'
+```
+
+### Standby (Auto Scaling)
+
+Putting an instance into **Standby** keeps it attached to the ASG but takes it out of service temporarily. The ASG does not replace it. Useful for patching or troubleshooting a running instance without triggering a scale-out.
+
+```bash
+# Move instance into Standby
+aws autoscaling enter-standby \
+  --instance-ids i-1234567890abcdef0 \
+  --auto-scaling-group-name my-asg \
+  --should-decrement-desired-capacity
+
+# Move instance back to InService
+aws autoscaling exit-standby \
+  --instance-ids i-1234567890abcdef0 \
+  --auto-scaling-group-name my-asg
+```
+
+---
+
+## EC2 Nitro
+
+Nitro is AWS's next-generation virtualization platform:
+
+- **Higher EBS throughput:** Up to 64,000 IOPS on Nitro vs. 32,000 on non-Nitro instances
+- Enhanced networking and IPv6 support
+- Better support for HPC workloads
+- Improved underlying security through hardware-level isolation
+
+Most modern instance types (C5, M5, R5, and newer) run on Nitro.
+
+```bash
+# Check if an instance type uses Nitro
+aws ec2 describe-instance-types \
+  --instance-types m5.large \
+  --query 'InstanceTypes[0].Hypervisor'
+# Returns "nitro" for Nitro-based instances
+```
+
+---
+
+## vCPU and Threads
+
+- A **vCPU** is a single hardware thread
+- Modern CPUs typically support **2 threads per core** (hyper-threading)
+- Example: 4 physical CPU cores = 8 vCPUs
+
+You can customize the CPU options when launching an instance to disable hyper-threading or reduce the vCPU count — useful for software licensed per-core.
+
+```bash
+# Launch with custom CPU options (disable hyper-threading: 1 thread per core)
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type c5.xlarge \
+  --cpu-options "CoreCount=2,ThreadsPerCore=1"
+
+# Launch with reduced vCPU count (e.g., only 2 cores out of 4)
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type c5.2xlarge \
+  --cpu-options "CoreCount=2,ThreadsPerCore=2"
+
+# Describe CPU options of a running instance
+aws ec2 describe-instances \
+  --instance-ids i-1234567890abcdef0 \
+  --query 'Reservations[0].Instances[0].CpuOptions'
+```
+
+---
+
+## Amazon Machine Image (AMI)
+
+An AMI is a **pre-configured snapshot** of an EC2 instance, including:
+
+- OS configuration
+- Installed software
+- Data volumes
+- Permissions
+
+AMIs enable **faster launch times** compared to User Data since everything is pre-installed. They're best for **static configurations** that don't change between instances.
+
+- AMIs are **region-specific** but can be copied across regions
+- When an AMI is copied to a new region, AWS automatically creates the underlying EBS snapshot in that region
+
+```bash
+# Create an AMI from a running (or stopped) instance
+aws ec2 create-image \
+  --instance-id i-1234567890abcdef0 \
+  --name "my-app-ami-v1.0" \
+  --description "Baked AMI with app dependencies installed" \
+  --no-reboot
+
+# Describe your AMIs
+aws ec2 describe-images \
+  --owners self \
+  --query 'Images[*].[ImageId,Name,CreationDate,State]' \
+  --output table
+
+# Find the latest Amazon Linux 2023 AMI
+aws ec2 describe-images \
+  --owners amazon \
+  --filters \
+    "Name=name,Values=al2023-ami-*-x86_64" \
+    "Name=state,Values=available" \
+  --query 'sort_by(Images, &CreationDate)[-1].ImageId'
+
+# Copy AMI to another region
+aws ec2 copy-image \
+  --source-region us-east-1 \
+  --source-image-id ami-0abcdef1234567890 \
+  --region us-west-2 \
+  --name "my-app-ami-v1.0-copy"
+
+# Share AMI with another AWS account
+aws ec2 modify-image-attribute \
+  --image-id ami-0abcdef1234567890 \
+  --launch-permission "Add=[{UserId=123456789012}]"
+
+# Deregister (delete) an AMI
+aws ec2 deregister-image --image-id ami-0abcdef1234567890
+```
+
+---
+
+## Billing Summary
+
+| Scenario | Billed? |
+|---|---|
+| Instance running | Yes |
+| Instance stopped | No |
+| Instance terminated | No |
+| Reserved instance (any state) | Yes — for the reserved period |
+| On-demand instance stopping to hibernate | Yes |
+
+### T-family: Burstable Performance Instances
+
+T2, T3, and T3a instances provide a **baseline CPU level** with the ability to burst using a **CPU credit system**:
+
+- Credits accumulate when CPU usage is below baseline
+- Credits are spent when CPU bursts above baseline
+- New AWS accounts (under 1 year) get free tier credits for T2.micro burst usage
+
+```bash
+# Check CPU credit balance for a T-family instance
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/EC2 \
+  --metric-name CPUCreditBalance \
+  --dimensions Name=InstanceId,Value=i-1234567890abcdef0 \
+  --start-time 2026-06-20T00:00:00Z \
+  --end-time 2026-06-21T00:00:00Z \
+  --period 3600 \
+  --statistics Average \
+  --output table
+
+# Set T3 instance to unlimited burst mode (no credit limit)
+aws ec2 modify-instance-credit-specification \
+  --instance-credit-specifications '[{
+    "InstanceId": "i-1234567890abcdef0",
+    "CpuCredits": "unlimited"
+  }]'
+```
+
+---
+
+## Systems Manager Run Command
+
+Run Command allows you to **remotely manage EC2 instances** without SSH:
+
+- Runs commands on one or many **managed instances** (instances with the SSM Agent installed and an appropriate IAM role)
+- Automates common administrative tasks (patching, configuration)
+- Available via AWS Console, CLI, PowerShell, and SDKs
+- **No additional cost**
+
+```bash
+# Run a shell command on a single instance
+aws ssm send-command \
+  --document-name "AWS-RunShellScript" \
+  --targets "Key=instanceids,Values=i-1234567890abcdef0" \
+  --parameters 'commands=["sudo yum update -y"]'
+
+# Run on multiple instances by tag
+aws ssm send-command \
+  --document-name "AWS-RunShellScript" \
+  --targets "Key=tag:Environment,Values=production" \
+  --parameters 'commands=["sudo systemctl restart nginx"]'
+
+# Check the output of a command execution
+aws ssm get-command-invocation \
+  --command-id <command-id> \
+  --instance-id i-1234567890abcdef0 \
+  --query '[Status,StandardOutputContent]'
+
+# List all SSM-managed instances in the account
+aws ssm describe-instance-information \
+  --query 'InstanceInformationList[*].[InstanceId,PingStatus,PlatformName]' \
+  --output table
+```
+
+---
+
+## Instance Tenancy
+
+| Tenancy | Description |
+|---|---|
+| **Default** | Shared hardware with other AWS customers |
+| **Dedicated** | Single-tenant hardware for your AWS account |
+| **Host** | Dedicated physical server you control (Dedicated Host) |
+
+> Tenancy can only be changed between **Host** and **Dedicated** after launch. **Dedicated** tenancy takes precedence over **Default** tenancy.
+
+```bash
+# Launch a Dedicated instance
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type m5.large \
+  --placement "Tenancy=dedicated"
+
+# Allocate a Dedicated Host
+aws ec2 allocate-hosts \
+  --instance-type m5.large \
+  --availability-zone us-east-1a \
+  --auto-placement on \
+  --quantity 1
+
+# Launch on a specific Dedicated Host
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type m5.large \
+  --placement "HostId=h-12345678,Tenancy=host"
+
+# Modify instance tenancy (host ↔ dedicated only)
+aws ec2 modify-instance-placement \
+  --instance-id i-1234567890abcdef0 \
+  --tenancy dedicated
+```
+
+---
+
+## Troubleshooting
+
+### Instance Immediately Terminates After Launch
+
+Common causes:
+
+- Reached your **EBS volume limit**
+- An **EBS snapshot is corrupt**
+- The root EBS volume is **encrypted** and you lack KMS key permissions
+- The instance store-backed AMI is **missing required parts**
+
+```bash
+# Check the state transition reason for a terminated instance
+aws ec2 describe-instances \
+  --instance-ids i-1234567890abcdef0 \
+  --query 'Reservations[0].Instances[0].StateTransitionReason'
+
+# Fetch system log (console output) for a failing instance
+aws ec2 get-console-output \
+  --instance-id i-1234567890abcdef0 \
+  --query 'Output' \
+  --output text
+
+# Check your EBS volume limits
+aws service-quotas get-service-quota \
+  --service-code ec2 \
+  --quota-code L-D18FCD1D
+```
+
+### EC2 Instance Metadata
+
+EC2 instances can query their own metadata from within the instance:
+
+```bash
+# Get instance ID
+curl http://169.254.169.254/latest/meta-data/instance-id
+
+# Get instance type
+curl http://169.254.169.254/latest/meta-data/instance-type
+
+# Get public IP
+curl http://169.254.169.254/latest/meta-data/public-ipv4
+
+# Get IAM role name
+curl http://169.254.169.254/latest/meta-data/iam/security-credentials/
+
+# Get temporary credentials for the attached IAM role
+curl http://169.254.169.254/latest/meta-data/iam/security-credentials/MyRole
+
+# IMDSv2 (more secure — requires a session token)
+TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+curl -H "X-aws-ec2-metadata-token: $TOKEN" \
+  http://169.254.169.254/latest/meta-data/instance-id
+```
+
+- Only accessible from **within the instance** (not from the internet)
+- No IAM role required to call this endpoint
+- You can **retrieve the IAM role name** from metadata, but **not the IAM policy**
+- Prefer **IMDSv2** (token-based) over IMDSv1 to protect against SSRF attacks
+
+```bash
+# Enforce IMDSv2 on a running instance
+aws ec2 modify-instance-metadata-options \
+  --instance-id i-1234567890abcdef0 \
+  --http-tokens required \
+  --http-endpoint enabled
+
+# Enforce IMDSv2 at launch
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type t3.micro \
+  --metadata-options "HttpTokens=required,HttpEndpoint=enabled"
+```
+
+> When an IAM role is attached, the AWS CLI inside the instance uses instance metadata to automatically retrieve temporary credentials — no manual credential configuration needed.
+
+---
+
+## SSH Access
+
+SSH into public EC2 instances using a key pair:
+
+```bash
+# Fix permissions on private key
+chmod 400 my-key.pem
+
+# Connect to an instance
+ssh -i my-key.pem ec2-user@<public-ip>
+
+# Connect via Instance Connect (no key management needed)
+aws ec2-instance-connect send-ssh-public-key \
+  --instance-id i-1234567890abcdef0 \
+  --availability-zone us-east-1a \
+  --instance-os-user ec2-user \
+  --ssh-public-key file://~/.ssh/id_rsa.pub
+
+# Create a new key pair and save the private key
+aws ec2 create-key-pair \
+  --key-name my-new-key \
+  --query 'KeyMaterial' \
+  --output text > my-new-key.pem && chmod 400 my-new-key.pem
+
+# List key pairs
+aws ec2 describe-key-pairs \
+  --query 'KeyPairs[*].[KeyName,KeyFingerprint]' \
+  --output table
+
+# Delete a key pair
+aws ec2 delete-key-pair --key-name my-old-key
+```
+
+**Key recovery:** You can generate the **public key from the private key** (`.pem` → `.pub`), but not the other way around.
+
+### Reusing SSH Keys Across Regions
+
+```bash
+# 1. Extract the public key from your existing private key
+ssh-keygen -y -f my-key.pem > my-key.pub
+
+# 2. Import it into the target region
+aws ec2 import-key-pair \
+  --region us-west-2 \
+  --key-name my-key \
+  --public-key-material fileb://my-key.pub
+```
+
+---
+
+## Best Practices
+
+### Security
+
+**Never use the root AWS account for day-to-day operations.** Create IAM users or roles with least-privilege permissions.
+
+- Always attach IAM roles via instance profiles — never hardcode credentials on an instance
+- Enforce **IMDSv2** (`HttpTokens=required`) on all instances to block SSRF-based credential theft
+- Keep a **dedicated security group for SSH/RDP** and restrict it to known CIDR ranges; don't bundle it with your app SG
+- Disable direct SSH access entirely where possible — use **SSM Session Manager** instead (no open port 22, fully audited)
+- Enable **EBS encryption by default** at the account level so every new volume is encrypted at rest
+
+```bash
+# Enforce IMDSv2 account-wide for all new instances
+aws ec2 modify-instance-metadata-defaults \
+  --http-tokens required \
+  --region us-east-1
+
+# Enable EBS encryption by default
+aws ec2 enable-ebs-encryption-by-default --region us-east-1
+
+# Open SSM Session Manager to an instance (no SSH needed)
+aws ssm start-session --target i-1234567890abcdef0
+```
+
+---
+
+### Cost Optimization
+
+- Use **AWS Compute Optimizer** to right-size over-provisioned instances before committing to Reserved Instances
+- Cover your steady-state baseline with **1-year Standard Reserved Instances**; handle spikes with On-Demand or Spot
+- Use **Spot Instances with the `diversified` fleet strategy** for batch and fault-tolerant workloads — up to 90% cheaper than On-Demand
+- Set up **CloudWatch billing alarms** to catch runaway costs early
+- Stop or terminate non-production instances outside business hours using **Instance Scheduler** or a simple Lambda cron
+
+```bash
+# Get Compute Optimizer recommendations for EC2 instances
+aws compute-optimizer get-ec2-instance-recommendations \
+  --query 'instanceRecommendations[*].[instanceArn,finding,recommendationOptions[0].instanceType]' \
+  --output table
+
+# Schedule stop/start with a tag-based approach (example: stop all dev instances)
+aws ec2 stop-instances \
+  --instance-ids $(aws ec2 describe-instances \
+    --filters "Name=tag:Environment,Values=dev" "Name=instance-state-name,Values=running" \
+    --query 'Reservations[*].Instances[*].InstanceId' \
+    --output text)
+
+# Create a CloudWatch billing alarm (threshold: $50 USD)
+aws cloudwatch put-metric-alarm \
+  --alarm-name "EC2BillingAlert" \
+  --metric-name EstimatedCharges \
+  --namespace AWS/Billing \
+  --statistic Maximum \
+  --period 86400 \
+  --threshold 50 \
+  --comparison-operator GreaterThanThreshold \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:BillingAlerts \
+  --dimensions Name=ServiceName,Value=AmazonEC2
+```
+
+---
+
+### High Availability
+
+- Always deploy across **at least 2 AZs** — a single AZ outage should not take down your service
+- Use an **Auto Scaling Group (ASG)** even for fixed-size fleets — it replaces unhealthy instances automatically
+- Place stateless app servers in a **Spread Placement Group** for critical workloads that can't tolerate simultaneous failures
+- Use **Elastic IPs or a Load Balancer** to decouple your public endpoint from any specific instance
+- Prefer **EBS-backed instances** over instance store — instance store data is lost on stop/terminate
+
+```bash
+# Create an Auto Scaling Group across multiple AZs
+aws autoscaling create-auto-scaling-group \
+  --auto-scaling-group-name my-asg \
+  --launch-template "LaunchTemplateName=my-lt,Version=\$Latest" \
+  --min-size 2 \
+  --max-size 6 \
+  --desired-capacity 2 \
+  --availability-zones us-east-1a us-east-1b us-east-1c \
+  --health-check-type ELB \
+  --health-check-grace-period 300
+
+# Describe instance health in an ASG
+aws autoscaling describe-auto-scaling-instances \
+  --query 'AutoScalingInstances[*].[InstanceId,AvailabilityZone,HealthStatus,LifecycleState]' \
+  --output table
+```
+
+---
+
+### Performance
+
+- Match the instance family to your workload — don't run memory-intensive workloads on compute-optimized instances
+- Use **Cluster Placement Groups** for HPC and low-latency inter-node communication
+- Enable **Enhanced Networking** (`ena` driver) for high-bandwidth, low-latency networking — all Nitro instances support it by default
+- For storage I/O-heavy workloads, use **io2 Block Express** EBS volumes on Nitro instances to hit 256,000 IOPS
+- Use **instance store (NVMe)** for ephemeral scratch space that requires maximum local IOPS (caches, temp sort files)
+
+```bash
+# Verify Enhanced Networking is enabled
+aws ec2 describe-instances \
+  --instance-ids i-1234567890abcdef0 \
+  --query 'Reservations[0].Instances[0].EnaSupport'
+
+# Enable Enhanced Networking (ENA) — requires instance to be stopped
+aws ec2 modify-instance-attribute \
+  --instance-id i-1234567890abcdef0 \
+  --ena-support
+
+# Check EBS-optimized status
+aws ec2 describe-instances \
+  --instance-ids i-1234567890abcdef0 \
+  --query 'Reservations[0].Instances[0].EbsOptimized'
+```
+
+---
+
+### Observability
+
+- Install the **CloudWatch Agent** on all instances to collect memory, disk, and process-level metrics (EC2 only sends CPU/network by default)
+- Enable **VPC Flow Logs** to audit network traffic in and out of your instances
+- Use **AWS Config** to detect configuration drift (e.g., someone opening port 22 to `0.0.0.0/0`)
+- Tag every instance with at minimum `Name`, `Environment`, and `Owner` — untagged resources are invisible in cost reports
+
+```bash
+# Install and configure the CloudWatch Agent
+aws ssm send-command \
+  --document-name "AWS-ConfigureAWSPackage" \
+  --targets "Key=tag:Environment,Values=production" \
+  --parameters 'action=Install,name=AmazonCloudWatchAgent'
+
+# Start CloudWatch Agent with a config from SSM Parameter Store
+aws ssm send-command \
+  --document-name "AmazonCloudWatch-ManageAgent" \
+  --targets "Key=instanceids,Values=i-1234567890abcdef0" \
+  --parameters 'action=configure,optionalConfigurationSource=ssm,optionalConfigurationLocation=/cloudwatch/agent/config'
+
+# Enable VPC Flow Logs to CloudWatch
+aws ec2 create-flow-logs \
+  --resource-type VPC \
+  --resource-ids vpc-12345678 \
+  --traffic-type ALL \
+  --log-destination-type cloud-watch-logs \
+  --log-group-name /vpc/flow-logs \
+  --deliver-logs-permission-arn arn:aws:iam::123456789012:role/FlowLogsRole
+
+# Tag instances in bulk
+aws ec2 create-tags \
+  --resources i-1234567890abcdef0 i-0987654321fedcba0 \
+  --tags Key=Environment,Value=production Key=Owner,Value=platform-team
+```
+
+---
+
+### Patching & Maintenance
+
+- Use **SSM Patch Manager** to automatically patch OS packages on a schedule — no SSH required
+- Build patched **AMIs regularly** using EC2 Image Builder rather than patching live instances
+- Use **Launch Templates** (not Launch Configurations) — they support versioning and all current instance features
+- Always test AMI changes in a staging ASG before rolling to production
+
+```bash
+# Create a patching maintenance window
+aws ssm create-maintenance-window \
+  --name "weekly-patching" \
+  --schedule "cron(0 2 ? * SUN *)" \
+  --duration 2 \
+  --cutoff 1 \
+  --allow-unassociated-targets false
+
+# Create a patch baseline for Amazon Linux
+aws ssm create-patch-baseline \
+  --name "AmazonLinuxSecurityBaseline" \
+  --operating-system "AMAZON_LINUX_2" \
+  --approval-rules 'PatchRules=[{PatchFilterGroup:{PatchFilters=[{Key=SEVERITY,Values=[Critical,High]}]},AutoApproveAfterDays=7}]'
+
+# List instances that need patching
+aws ssm describe-instance-patch-states \
+  --instance-ids i-1234567890abcdef0 \
+  --query '[*].[InstanceId,MissingCount,FailedCount,InstalledPendingRebootCount]' \
+  --output table
+```
+
+---
+
+## Summary
+
+EC2 is the backbone of most AWS architectures. Understanding the purchasing model helps optimize costs significantly — Reserved Instances for steady-state workloads, Spot for fault-tolerant batch jobs, and On-Demand for unpredictable spikes. Pair that with the right instance family, placement strategy, and IAM role configuration, and you have a solid foundation for running production workloads on AWS.

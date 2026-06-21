@@ -1,4 +1,9 @@
 {
+  "aws": 1,
+  "ec2": 1,
+  "cloud": 1,
+  "infrastructure": 1,
+  "devops": 1,
   "distributed-systems": 1,
   "raft": 1,
   "go": 2,
