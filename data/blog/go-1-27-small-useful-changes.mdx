@@ -1,0 +1,149 @@
+---
+title: 'Go 1.27: small changes that feel useful'
+date: '2026-08-22'
+tags: ['go', 'golang', 'programming']
+draft: false
+summary: 'A short look at the Go 1.27 changes I will probably use first, with a few runnable examples.'
+authors: ['default']
+layout: 'PostLayout'
+---
+
+Go 1.27 is here. Generic methods are the change that caught my eye. They fix a limit that has felt awkward since generics arrived. The rest of the release cleans up smaller problems.
+
+Every example below has a Playground link. You can run the code yourself.
+
+## Generic methods are finally here
+
+Before Go 1.27, a method could not add a new type. We often had to write a helper function instead. That felt odd when the code belonged with a type.
+
+Go 1.27 fixes this. Here is a list that turns numbers into labels:
+
+```go
+type List[T any] []T
+
+func (items List[T]) Map[U any](convert func(T) U) List[U] {
+	result := make(List[U], len(items))
+	for i, item := range items {
+		result[i] = convert(item)
+	}
+	return result
+}
+
+numbers := List[int]{1, 2, 3}
+
+labels := numbers.Map(func(n int) string {
+	return fmt.Sprintf("Item %d", n)
+})
+
+fmt.Println(labels) // [Item 1 Item 2 Item 3]
+```
+
+[Run the generic method example on the Go Playground](https://go.dev/play/p/UCPdVNrl0-P).
+
+Here, `U` is the type we want back. `Map` changes a `List[int]` into a `List[string]`. Before Go 1.27, `Map` had to be a separate function. Now it can be a method on `List`.
+
+There is one limit. Interfaces cannot have generic methods. A generic method also cannot implement an interface method. This feature works best with concrete types such as `List`.
+
+## Embedded structs need less typing
+
+This is a small change. It makes structs easier to set up. We can now set an embedded field directly:
+
+```go
+type Address struct {
+	City string
+}
+
+type User struct {
+	Name string
+	Address
+}
+
+user := User{
+	Name: "Amjad",
+	City: "Kuala Lumpur",
+}
+```
+
+[Run the embedded struct example on the Go Playground](https://go.dev/play/p/v2Hu2opG53N).
+
+Before Go 1.27, `City` had to sit inside `Address: Address{...}`. The new code is shorter. It is still easy to read.
+
+## UUIDs are now built in
+
+I have added a UUID package to many Go projects. Go 1.27 finally includes one:
+
+```go
+package main
+
+import (
+	"fmt"
+	"uuid"
+)
+
+func main() {
+	id := uuid.New()
+	fmt.Println(id)
+}
+```
+
+[Run the UUID example on the Go Playground](https://go.dev/play/p/s0OfRlYAeot).
+
+The package can create version 4 and version 7 UUIDs. It can also read UUID strings. This means one less package to install.
+
+It does not plug directly into `database/sql`. You may need to read an ID as a string and then parse it. `google/uuid` is still easier for database-heavy projects.
+
+## Post-quantum signatures are here
+
+Go 1.27 adds `crypto/mldsa`. It creates signatures that are designed to resist future quantum computers.
+
+The code feels like other signing code in Go:
+
+```go
+privateKey, err := mldsa.GenerateKey(mldsa.MLDSA44())
+if err != nil {
+	log.Fatal(err)
+}
+
+message := []byte("deploy version 1.27")
+signature, err := privateKey.Sign(nil, message, nil)
+if err != nil {
+	log.Fatal(err)
+}
+
+err = mldsa.Verify(privateKey.PublicKey(), message, signature, nil)
+fmt.Println("valid:", err == nil)
+fmt.Println("public key:", len(privateKey.PublicKey().Bytes()), "bytes")
+fmt.Println("signature:", len(signature), "bytes")
+```
+
+```text
+valid: true
+public key: 1312 bytes
+signature: 2420 bytes
+```
+
+[Run the ML-DSA example on the Go Playground](https://go.dev/play/p/WDcjbH3RSvh).
+
+Those sizes use ML-DSA-44, the smallest option. The large keys and signatures are the main tradeoff. They can add real cost to certificates, network messages, and stored data.
+
+## JSON gets a careful upgrade
+
+JSON also gets an update. The new `encoding/json/v2` package gives us more control. It also handles bad input more carefully. It rejects invalid text and repeated object names.
+
+We do not need to change old projects right away. The existing `encoding/json` API still works. It now uses the newer code underneath. Reading JSON is also faster in many programs.
+
+One detail may affect tests. JSON error messages can have different text. Avoid tests that compare the full error message.
+
+## A few practical improvements
+
+- A new `goroutineleak` profile finds goroutines that will never finish. It is available at `/debug/pprof/goroutineleak`.
+- Small memory allocations are faster. We do not need to change our code.
+- `go doc example.com/pkg@v1.2.3` shows the docs for an exact package version.
+- `go mod tidy` now cleans up repeated `require` blocks in `go.mod`.
+- `strings.CutLast` and `bytes.CutLast` make it easier to split at the final separator.
+
+## My take
+
+Generic methods are the main change for me. They let useful code live next to the type it belongs to. The UUID package is a smaller change. I will probably use it more often.
+
+The [official Go 1.27 release notes](https://go.dev/doc/go1.27) list every change. The [Go release announcement](https://go.dev/blog/go1.27) gives a shorter overview.
