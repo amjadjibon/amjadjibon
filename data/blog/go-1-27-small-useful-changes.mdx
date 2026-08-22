@@ -38,7 +38,7 @@ labels := numbers.Map(func(n int) string {
 fmt.Println(labels) // [Item 1 Item 2 Item 3]
 ```
 
-[Run the generic method example on the Go Playground](https://go.dev/play/p/UCPdVNrl0-P).
+[Run the generic method example on the Go Playground](https://go.dev/play/p/gkEe9YP1gfM).
 
 Here, `U` is the type we want back. `Map` changes a `List[int]` into a `List[string]`. Before Go 1.27, `Map` had to be a separate function. Now it can be a method on `List`.
 
@@ -59,12 +59,12 @@ type User struct {
 }
 
 user := User{
-	Name: "Amjad",
-	City: "Kuala Lumpur",
+	Name: "John",
+	City: "USA",
 }
 ```
 
-[Run the embedded struct example on the Go Playground](https://go.dev/play/p/v2Hu2opG53N).
+[Run the embedded struct example on the Go Playground](https://go.dev/play/p/Hvei1Y0bY9N).
 
 Before Go 1.27, `City` had to sit inside `Address: Address{...}`. The new code is shorter. It is still easy to read.
 
@@ -86,7 +86,7 @@ func main() {
 }
 ```
 
-[Run the UUID example on the Go Playground](https://go.dev/play/p/s0OfRlYAeot).
+[Run the UUID example on the Go Playground](https://go.dev/play/p/j4_MuP6XdaU).
 
 The package can create version 4 and version 7 UUIDs. It can also read UUID strings. This means one less package to install.
 
@@ -122,7 +122,7 @@ public key: 1312 bytes
 signature: 2420 bytes
 ```
 
-[Run the ML-DSA example on the Go Playground](https://go.dev/play/p/WDcjbH3RSvh).
+[Run the ML-DSA example on the Go Playground](https://go.dev/play/p/dzVAeAhZBwD).
 
 Those sizes use ML-DSA-44, the smallest option. The large keys and signatures are the main tradeoff. They can add real cost to certificates, network messages, and stored data.
 
