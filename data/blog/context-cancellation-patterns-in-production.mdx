@@ -1,0 +1,175 @@
+---
+title: 'Context cancellation patterns I actually use in production'
+date: '2026-08-30'
+tags: ['go', 'golang', 'programming', 'concurrency']
+draft: false
+summary: 'The context.Context habits that have actually saved me in production Go services, with runnable examples for each one.'
+authors: ['default']
+layout: 'PostLayout'
+---
+
+`context.Context` looks simple in the tour: cancel a thing, set a deadline, pass a value. In a real service it is the mechanism that decides whether a slow database call blocks a goroutine forever, whether a shutdown actually stops in-flight work, and whether "the request succeeded" is still true by the time you find out.
+
+These are the patterns I reach for over and over, not the full API surface. Every example runs on the Go Playground.
+
+## Always `defer cancel()` on the line that creates the context
+
+`context.WithTimeout` and `context.WithCancel` both allocate a timer or a goroutine internally. If you never call the returned `cancel`, that resource leaks until the parent context is done — which, for `context.Background()`, is never.
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+defer cancel() // always right after the line that creates the context
+
+select {
+case <-time.After(200 * time.Millisecond):
+	fmt.Println("work finished")
+case <-ctx.Done():
+	fmt.Println("gave up:", ctx.Err())
+}
+```
+
+```text
+gave up: context deadline exceeded
+```
+
+[Run it on the Go Playground](https://go.dev/play/p/K4irXl12wa6).
+
+I put `defer cancel()` on the same line I create the context, before writing anything else. Anywhere else, it's too easy to add an early `return` above it and lose the deferred call. Once this is a habit, `go vet`'s `lostcancel` check basically never fires on my code.
+
+## Give outbound calls a deadline instead of `context.Background()`
+
+The context you're handed by a caller has no opinion about how long *your* downstream call should take. If I'm calling another service, a database, or an external API, I wrap the incoming context with my own bound:
+
+```go
+func fetchUser(ctx context.Context, id string) (*User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	return userClient.Get(ctx, id)
+}
+```
+
+Two things matter here. First, I derive from the caller's `ctx`, not `context.Background()` — if the caller's deadline is shorter than mine, theirs still wins, because `context.WithTimeout` never extends a deadline, only tightens it. Second, the timeout lives next to the call it protects, not somewhere upstream where nobody will think to look for it when this endpoint starts timing out.
+
+## Pass `ctx` as an argument, never store it on a struct
+
+The one rule I don't bend: `context.Context` is the first parameter of a function, not a struct field. Go's own documentation says this, and it's not a style preference — a context stored on a struct is a snapshot from whenever that struct was built, and it silently stops reflecting the request that's actually in flight.
+
+```go
+// Don't do this
+type Worker struct {
+	ctx context.Context
+}
+
+// Do this
+func (w *Worker) Process(ctx context.Context, job Job) error {
+	return w.repo.Save(ctx, job)
+}
+```
+
+The symptom I've seen from breaking this rule: a "cancelled" request keeps running because the code that's actually doing the work is holding a `ctx` from a struct built at server startup, not the one attached to the request.
+
+## Use `context.Cause` when "why" matters more than "that"
+
+`ctx.Err()` only ever returns `context.Canceled` or `context.DeadlineExceeded`. That's not enough to answer "did this fail because of a slow downstream, or because we're shutting down?" — and that distinction changes whether you retry, alert, or just log it and move on. `context.WithCancelCause` (Go 1.21+) lets you attach the real reason:
+
+```go
+var errShuttingDown = errors.New("server is shutting down")
+
+parent, cancelParent := context.WithCancelCause(context.Background())
+
+go func() {
+	time.Sleep(30 * time.Millisecond)
+	cancelParent(errShuttingDown)
+}()
+
+ctx, cancel := context.WithTimeout(parent, 200*time.Millisecond)
+defer cancel()
+
+<-ctx.Done()
+
+fmt.Println("ctx.Err():    ", ctx.Err())
+fmt.Println("context.Cause:", context.Cause(ctx))
+fmt.Println("was it shutdown?", errors.Is(context.Cause(ctx), errShuttingDown))
+```
+
+```text
+ctx.Err():     context canceled
+context.Cause: server is shutting down
+was it shutdown? true
+```
+
+[Run it on the Go Playground](https://go.dev/play/p/XO0xjc7if7u).
+
+`ctx.Err()` still says `context canceled` — that part of the API doesn't change. `context.Cause(ctx)` is what tells you it was a deliberate shutdown, not a downstream timeout. I use this at the top of request handlers to decide whether a cancellation is worth an error log or is just normal shutdown noise.
+
+## Detach cleanup work with `context.WithoutCancel`
+
+An HTTP request's context is cancelled the instant the client disconnects — including after your handler has already decided the request succeeded. If you kick off a goroutine from inside that handler (an audit log write, a cache warm, a webhook), it inherits that cancellation and can get cut off for a "failure" that has nothing to do with it.
+
+```go
+func handleRequest(reqCtx context.Context) {
+	// reqCtx dies the moment the client disconnects.
+	// Cleanup work that must still happen shouldn't inherit that cancellation.
+	cleanupCtx := context.WithoutCancel(reqCtx)
+	go auditLog(cleanupCtx, "request handled")
+}
+```
+
+[Run the full example on the Go Playground](https://go.dev/play/p/BoDd3m8S7dL).
+
+`context.WithoutCancel` (Go 1.21+) keeps the values attached to `reqCtx` — trace IDs, request-scoped data — but detaches it from cancellation. I still give the detached context its own timeout with `context.WithTimeout` so it can't hang forever; it just no longer depends on whether the original caller is still listening.
+
+Before this existed in the standard library, I saw the same bug more than once: someone fires off `go doSomething(reqCtx)` inside a handler, the client disconnects a moment later, and `doSomething` gets cancelled mid-write. The client sees a `200`, but the side effect it was expecting never happens.
+
+## Fan-out work and cancel the rest on first failure
+
+When I split a batch into concurrent workers, I want one failure to stop the others immediately instead of waiting for every worker to finish before reporting the error. A `context.WithCancel` derived from the batch's own context does that:
+
+```go
+func fanOut(parent context.Context, ids []int) ([]int, error) {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel() // stop the other workers as soon as we return
+
+	results := make([]int, len(ids))
+	errs := make(chan error, len(ids))
+
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		go func(i, id int) {
+			defer wg.Done()
+			v, err := fetch(ctx, id)
+			if err != nil {
+				errs <- err
+				cancel() // one failure cancels the rest of the batch
+				return
+			}
+			results[i] = v
+		}(i, id)
+	}
+	wg.Wait()
+	close(errs)
+
+	if err := <-errs; err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+```
+
+```text
+[] worker 3 failed
+```
+
+[Run it on the Go Playground](https://go.dev/play/p/nYDJmlx70JR).
+
+In production code I reach for `golang.org/x/sync/errgroup` instead of hand-rolling the `WaitGroup` and error channel — `errgroup.WithContext` gives you exactly this cancel-on-first-error behavior with less bookkeeping. I wrote the manual version above because it runs on the Playground without an external module, but the shape is the same: derive a child context, cancel it the moment something fails, and every worker still selecting on `ctx.Done()` stops promptly instead of finishing work nobody needs anymore.
+
+The part that actually matters here isn't the library — it's that every worker has to be written to notice `ctx.Done()` in the first place. `fetch` above uses a `select` around its blocking work specifically so cancellation has somewhere to land. A worker that ignores its context and just runs to completion makes the whole pattern pointless.
+
+## The habit underneath all of these
+
+Every one of these patterns comes back to the same question: **who decided this should stop, and does everything downstream of that decision actually find out?** A context that isn't cancelled leaks. A context that's cancelled too eagerly kills work that should have survived. A context whose reason gets lost turns every timeout into an unexplained error.
+
+None of this shows up in a diagram of the request path. It shows up three months later, in a goroutine dump, or in an audit log with a gap where an entry should be.
