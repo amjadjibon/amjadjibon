@@ -1,6 +1,7 @@
 import type { Blog } from 'contentlayer/generated'
 import type { CoreContent } from 'pliny/utils/contentlayer'
 import { formatDate } from 'pliny/utils/formatDate'
+import GithubHeatmap from '@/components/GithubHeatmap'
 import Link from '@/components/Link'
 import Tag from '@/components/Tag'
 import siteMetadata from '@/data/siteMetadata'
@@ -73,6 +74,8 @@ export default function Home({ posts }: { posts: CoreContent<Blog>[] }) {
           </Link>
         </div>
       </div>
+
+      <GithubHeatmap />
 
       {/* Recent Posts */}
       <div className="divide-y divide-gray-200 dark:divide-gray-700">
