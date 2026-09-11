@@ -5,7 +5,11 @@ import ListLayout from '@/layouts/ListLayoutWithTags'
 
 const POSTS_PER_PAGE = 5
 
-export const metadata = genPageMetadata({ title: 'Blog' })
+export const metadata = genPageMetadata({
+  title: 'Go & Backend Engineering Blog',
+  description:
+    'Practical articles on Go, distributed systems, Kubernetes, and cloud infrastructure, with code examples and lessons from building backend systems.',
+})
 
 export default async function BlogPage(props: { searchParams: Promise<{ page: string }> }) {
   const posts = allCoreContent(sortPosts(allBlogs))

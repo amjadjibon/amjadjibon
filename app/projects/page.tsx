@@ -2,7 +2,11 @@ import { genPageMetadata } from '@/app/seo'
 import Card from '@/components/Card'
 import projectsData from '@/data/projectsData'
 
-export const metadata = genPageMetadata({ title: 'Projects' })
+export const metadata = genPageMetadata({
+  title: 'Open-Source Projects',
+  description:
+    'Explore Go libraries, distributed systems, developer tools, and AI automation projects built by Amjad Hossain (Jibon).',
+})
 
 export default function Projects() {
   return (

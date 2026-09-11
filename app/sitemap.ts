@@ -10,14 +10,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const blogRoutes = allBlogs
     .filter((post) => !post.draft)
     .map((post) => ({
-      url: `${siteUrl}/${post.path}`,
+      url: `${siteUrl}/${post.path}/`,
       lastModified: post.lastmod || post.date,
     }))
 
-  const latestPost = blogRoutes[0]?.lastModified ?? '2024-01-01'
-  const routes = ['', 'blog', 'projects', 'tags'].map((route) => ({
-    url: `${siteUrl}/${route}`,
-    lastModified: latestPost,
+  const routes = ['', 'about', 'blog', 'projects', 'tags'].map((route) => ({
+    url: route ? `${siteUrl}/${route}/` : `${siteUrl}/`,
   }))
 
   return [...routes, ...blogRoutes]

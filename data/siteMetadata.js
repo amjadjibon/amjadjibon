@@ -1,7 +1,7 @@
 /** @type {import("pliny/config").PlinyConfig } */
 const siteMetadata = {
   title: 'Amjad Jibon',
-  author: 'Amjad Jibon',
+  author: 'Amjad Hossain',
   headerTitle: 'amjadjibon',
   description:
     'Software Engineer specializing in Golang, distributed systems, microservices, and cloud infrastructure.',
@@ -10,7 +10,7 @@ const siteMetadata = {
   siteUrl: 'https://amjadjibon.com',
   siteRepo: 'https://github.com/amjadjibon/amjadjibon',
   siteLogo: `${process.env.BASE_PATH || ''}/static/images/logo.svg`,
-  socialBanner: `${process.env.BASE_PATH || ''}/static/images/logo.svg`,
+  socialBanner: `${process.env.BASE_PATH || ''}/opengraph-image`,
   email: 'amjad.jibon@gmail.com',
   github: 'https://github.com/amjadjibon',
   linkedin: 'https://www.linkedin.com/in/amjad-hossaain',

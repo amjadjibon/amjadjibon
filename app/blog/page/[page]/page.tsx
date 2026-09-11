@@ -1,9 +1,19 @@
 import { allBlogs } from 'contentlayer/generated'
 import { notFound } from 'next/navigation'
 import { allCoreContent, sortPosts } from 'pliny/utils/contentlayer'
+import { genPageMetadata } from '@/app/seo'
 import ListLayout from '@/layouts/ListLayoutWithTags'
 
 const POSTS_PER_PAGE = 5
+
+export async function generateMetadata(props: { params: Promise<{ page: string }> }) {
+  const { page } = await props.params
+  return genPageMetadata({
+    title: `Go & Backend Engineering Blog — Page ${page}`,
+    description: `Browse page ${page} of articles on Go, distributed systems, Kubernetes, and cloud infrastructure by Amjad Hossain.`,
+    alternates: { canonical: page === '1' ? '/blog/' : `/blog/page/${page}/` },
+  })
+}
 
 export const generateStaticParams = async () => {
   const totalPages = Math.ceil(allBlogs.length / POSTS_PER_PAGE)
